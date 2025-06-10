@@ -62,7 +62,7 @@ notion-md-sync/
 ```go
 module github.com/yourusername/notion-md-sync
 
-go 1.21
+go 1.21 or above
 
 require (
     github.com/spf13/cobra v1.8.0

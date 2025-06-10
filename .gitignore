@@ -24,9 +24,25 @@ profile.cov
 go.work
 go.work.sum
 
-# env file
+# Environment files and config with secrets
 .env
+config/config.yaml
+
+# Build artifacts
+bin/
+
+# User markdown files (users can override this by adding specific files)
+docs/*.md
+!docs/.gitkeep
 
 # Editor/IDE
-# .idea/
-# .vscode/
+.idea/
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.log

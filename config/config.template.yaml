@@ -1,0 +1,14 @@
+directories:
+  excluded_patterns:
+  - '*.tmp'
+  - 'node_modules/**'
+  - '.git/**'
+  markdown_root: ./docs
+mapping:
+  strategy: frontmatter  # or filename
+notion:
+  parent_page_id: "" # Set via NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID env var
+  token: "" # Set via NOTION_MD_SYNC_NOTION_TOKEN env var
+sync:
+  conflict_resolution: newer  # newer, notion_wins, markdown_wins
+  direction: push  # push, pull, bidirectional
