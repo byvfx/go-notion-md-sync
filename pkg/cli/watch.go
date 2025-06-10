@@ -8,9 +8,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/byoung/go-notion-md-sync/pkg/config"
-	"github.com/byoung/go-notion-md-sync/pkg/sync"
-	"github.com/byoung/go-notion-md-sync/pkg/watcher"
+	"github.com/byvfx/go-notion-md-sync/pkg/config"
+	"github.com/byvfx/go-notion-md-sync/pkg/sync"
+	"github.com/byvfx/go-notion-md-sync/pkg/watcher"
 	"github.com/spf13/cobra"
 )
 

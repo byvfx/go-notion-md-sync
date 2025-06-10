@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/byoung/go-notion-md-sync/pkg/markdown"
-	"github.com/byoung/go-notion-md-sync/pkg/sync"
+	"github.com/byvfx/go-notion-md-sync/pkg/markdown"
+	"github.com/byvfx/go-notion-md-sync/pkg/sync"
 )
 
 // findMarkdownFiles recursively finds all markdown files in a directory

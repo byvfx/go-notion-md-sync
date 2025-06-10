@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/byoung/go-notion-md-sync/pkg/config"
-	"github.com/byoung/go-notion-md-sync/pkg/markdown"
-	"github.com/byoung/go-notion-md-sync/pkg/notion"
+	"github.com/byvfx/go-notion-md-sync/pkg/config"
+	"github.com/byvfx/go-notion-md-sync/pkg/markdown"
+	"github.com/byvfx/go-notion-md-sync/pkg/notion"
 )
 
 type Engine interface {

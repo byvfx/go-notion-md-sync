@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/byoung/go-notion-md-sync/pkg/notion"
+	"github.com/byvfx/go-notion-md-sync/pkg/notion"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/text"

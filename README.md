@@ -19,14 +19,14 @@ A powerful CLI tool for synchronizing markdown files with Notion pages. Built wi
 
 #### Build from Source
 ```bash
-git clone https://github.com/byoung/go-notion-md-sync.git
+git clone https://github.com/byvfx/go-notion-md-sync.git
 cd go-notion-md-sync
 make build
 ```
 
 #### Or use Go install
 ```bash
-go install github.com/byoung/go-notion-md-sync/cmd/notion-md-sync@latest
+go install github.com/byvfx/go-notion-md-sync/cmd/notion-md-sync@latest
 ```
 
 ### 2. Setup Notion Integration
@@ -391,5 +391,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Support
 
 - 📖 [Documentation](docs/)
-- 🐛 [Issues](https://github.com/byoung/go-notion-md-sync/issues)
-- 💬 [Discussions](https://github.com/byoung/go-notion-md-sync/discussions)
+- 🐛 [Issues](https://github.com/byvfx/go-notion-md-sync/issues)
+- 💬 [Discussions](https://github.com/byvfx/go-notion-md-sync/discussions)

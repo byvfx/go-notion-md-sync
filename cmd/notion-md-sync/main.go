@@ -4,7 +4,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/byoung/go-notion-md-sync/pkg/cli"
+	"github.com/byvfx/go-notion-md-sync/pkg/cli"
 )
 
 func main() {
