@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/viper"
+	"github.com/subosito/gotenv"
 )
 
 type Config struct {
@@ -30,6 +31,9 @@ type Config struct {
 }
 
 func Load(configPath string) (*Config, error) {
+	// Load .env file if it exists
+	loadEnvFile()
+
 	v := viper.New()
 
 	// Set defaults
@@ -81,4 +85,39 @@ func Load(configPath string) (*Config, error) {
 	}
 
 	return &config, nil
+}
+
+// loadEnvFile loads .env file from current directory or parent directories
+func loadEnvFile() {
+	// Try to load .env from current directory first
+	if err := gotenv.Load(".env"); err == nil {
+		return
+	}
+	
+	// Try to load from home directory
+	if home, err := os.UserHomeDir(); err == nil {
+		envPath := filepath.Join(home, ".notion-md-sync", ".env")
+		if err := gotenv.Load(envPath); err == nil {
+			return
+		}
+	}
+	
+	// Try to find .env in parent directories (walk up to 3 levels)
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return
+	}
+	
+	for i := 0; i < 3; i++ {
+		envPath := filepath.Join(currentDir, ".env")
+		if err := gotenv.Load(envPath); err == nil {
+			return
+		}
+		
+		parentDir := filepath.Dir(currentDir)
+		if parentDir == currentDir {
+			break // reached root
+		}
+		currentDir = parentDir
+	}
 }

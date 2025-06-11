@@ -1,4 +1,92 @@
-# Release Notes - v0.1.0
+# Release Notes
+
+## v0.3.0 - Configuration Bug Fix
+
+### 🐛 Critical Fix: Automatic .env File Loading
+
+This release fixes a critical issue where `.env` files created by `notion-md-sync init` weren't being automatically loaded, causing "notion.token is required" errors even when credentials were properly configured.
+
+#### What's Fixed
+- **🔧 Automatic .env Loading**: Environment variables from `.env` files are now automatically loaded before config validation
+- **📁 Smart File Discovery**: Searches for `.env` files in current directory, parent directories, and `~/.notion-md-sync/`
+- **🔄 Seamless Experience**: Commands now work immediately after running `notion-md-sync init` and editing `.env`
+
+#### For Existing Users
+If you're experiencing config errors after v0.2.0 installation:
+
+**Reinstall to get the fix:**
+```powershell
+# Windows
+iwr -useb https://raw.githubusercontent.com/byvfx/go-notion-md-sync/main/scripts/install-windows.ps1 | iex
+
+# Linux/macOS  
+curl -sSL https://raw.githubusercontent.com/byvfx/go-notion-md-sync/main/scripts/install-unix.sh | bash
+```
+
+**Then test your existing project:**
+```bash
+cd your-project-directory
+notion-md-sync pull --verbose  # Should now work!
+```
+
+#### Technical Details
+- Added automatic `.env` file loading using the existing `gotenv` dependency
+- Environment variables are loaded before config validation
+- Backwards compatible with manual environment variable setting
+- No breaking changes to existing functionality
+
+This fix ensures the seamless "install → init → use" experience that was intended in v0.2.0.
+
+---
+
+## v0.2.0 - Installation & Setup Improvements
+
+### 🚀 Enhanced Installation Experience
+
+We've made it significantly easier to install and get started with notion-md-sync!
+
+#### New Features
+- **📦 One-Line Installation Scripts**: Install on Windows, Linux, and macOS with a single command
+- **🎯 Project Initialization**: New `notion-md-sync init` command for easy project setup
+- **📁 Automatic PATH Management**: Installers automatically add the binary to your system PATH
+- **📖 Comprehensive Installation Guide**: New [INSTALLATION.md](INSTALLATION.md) with detailed setup instructions
+
+#### Installation Commands
+
+**Windows (PowerShell):**
+```powershell
+iwr -useb https://raw.githubusercontent.com/byvfx/go-notion-md-sync/main/scripts/install-windows.ps1 | iex
+```
+
+**Linux/macOS:**
+```bash
+curl -sSL https://raw.githubusercontent.com/byvfx/go-notion-md-sync/main/scripts/install-unix.sh | bash
+```
+
+#### Quick Project Setup
+```bash
+# Navigate to your project directory
+cd my-notion-project
+
+# Initialize with interactive setup
+notion-md-sync init
+
+# Edit .env with your credentials and start syncing!
+notion-md-sync push --verbose
+```
+
+#### What's New
+- Automatic binary download and extraction
+- Cross-platform PATH configuration
+- Interactive credential setup
+- Sample files and directory structure creation
+- Improved error messages and help text
+
+This release focuses on user experience and makes notion-md-sync as easy to install as popular CLI tools like ffmpeg or git.
+
+---
+
+## v0.1.0 - Initial Release
 
 ## 🎉 Initial Release
 
