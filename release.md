@@ -1,0 +1,146 @@
+# Release Notes - v0.1.0
+
+## 🎉 Initial Release
+
+We're excited to announce the first release of **notion-md-sync** - a powerful CLI tool for synchronizing markdown files with Notion pages, built with Go for fast and reliable performance.
+
+## ✨ Features
+
+### Core Functionality
+- **🔄 Bidirectional Sync**: Seamlessly sync between markdown files and Notion pages
+- **📝 Frontmatter Support**: Automatic metadata management with YAML frontmatter
+- **👀 File Watching**: Real-time auto-sync when files change
+- **🎯 Flexible Mapping**: Choose between filename or frontmatter-based page mapping
+
+### CLI Commands
+- `pull` - Download Notion pages as markdown files
+- `push` - Upload markdown files to Notion
+- `sync` - Bidirectional synchronization with conflict resolution
+- `watch` - Monitor file changes for automatic sync
+
+### Configuration & Security
+- **🔒 Secure Configuration**: Environment variable support for API tokens
+- **📁 Directory Management**: Configurable markdown directories with exclusion patterns
+- **⚙️ Flexible Config**: YAML configuration with environment variable overrides
+
+## 🚀 Quick Start
+
+### Installation
+```bash
+# Download from GitHub Releases
+wget https://github.com/byvfx/go-notion-md-sync/releases/download/v0.1.0/notion-md-sync-linux-amd64.tar.gz
+tar -xzf notion-md-sync-linux-amd64.tar.gz
+
+# Or build from source
+git clone https://github.com/byvfx/go-notion-md-sync.git
+cd go-notion-md-sync
+make build
+```
+
+### Basic Usage
+```bash
+# Pull pages from Notion
+./notion-md-sync pull --verbose
+
+# Push markdown to Notion
+./notion-md-sync push docs/my-file.md --verbose
+
+# Watch for changes
+./notion-md-sync watch --verbose
+```
+
+## 📦 Binary Downloads
+
+This release includes pre-built binaries for:
+- **Linux**: AMD64, ARM64
+- **macOS**: AMD64 (Intel), ARM64 (Apple Silicon)
+- **Windows**: AMD64
+
+## 🛠 Technical Details
+
+### Architecture
+- Built with Go 1.21+ for performance and reliability
+- Uses Cobra for CLI interface and Viper for configuration
+- Goldmark for markdown parsing with frontmatter support
+- fsnotify for cross-platform file watching
+
+### Supported Markdown Features
+- Headings (H1, H2, H3)
+- Paragraphs and text formatting
+- Bullet and numbered lists
+- Code blocks with syntax highlighting
+- Bold and italic emphasis
+
+## 🔧 Configuration
+
+### Environment Variables
+```bash
+NOTION_MD_SYNC_NOTION_TOKEN=your_integration_token
+NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID=your_parent_page_id
+```
+
+### Config File (config.yaml)
+```yaml
+directories:
+  markdown_root: ./docs
+  excluded_patterns:
+    - '*.tmp'
+    - 'node_modules/**'
+    - '.git/**'
+sync:
+  direction: push
+  conflict_resolution: newer
+mapping:
+  strategy: frontmatter
+```
+
+## 📋 What's Included
+
+- Complete CLI application with all sync commands
+- Comprehensive documentation and examples
+- Automated setup and validation scripts
+- GitHub Actions workflow for multi-platform builds
+- Security guidelines and best practices
+
+## 🐛 Known Issues
+
+- This is the initial release - please report any issues on GitHub
+- Some advanced Notion block types may not be fully supported yet
+- Large file operations may need optimization in future releases
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our contributing guidelines and feel free to:
+- Report bugs and feature requests
+- Submit pull requests
+- Improve documentation
+- Share usage examples
+
+## 📚 Documentation
+
+- [README.md](README.md) - Complete usage guide
+- [QUICK_START.md](QUICK_START.md) - Get started quickly
+- [SECURITY.md](SECURITY.md) - Security best practices
+- [CLAUDE.md](CLAUDE.md) - Development guidelines
+
+## 🎯 Next Steps
+
+Future releases will focus on:
+- Enhanced Notion block type support
+- Performance optimizations
+- Advanced sync conflict resolution
+- Web UI for configuration
+- Plugin system for extensibility
+
+## 🙏 Acknowledgments
+
+Special thanks to the Go community and the maintainers of the excellent libraries that make this project possible:
+- Cobra & Viper for CLI framework
+- Goldmark for markdown processing
+- fsnotify for file watching
+
+---
+
+**Full Changelog**: https://github.com/byvfx/go-notion-md-sync/commits/v0.1.0
+
+**Download**: https://github.com/byvfx/go-notion-md-sync/releases/tag/v0.1.0

@@ -1,5 +1,11 @@
 # notion-md-sync
 
+[![Build Status](https://github.com/byvfx/go-notion-md-sync/workflows/Build%20Binaries/badge.svg)](https://github.com/byvfx/go-notion-md-sync/actions)
+[![Go Report Card](https://goreportcard.com/badge/github.com/byvfx/go-notion-md-sync)](https://goreportcard.com/report/github.com/byvfx/go-notion-md-sync)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub release](https://img.shields.io/github/release/byvfx/go-notion-md-sync.svg)](https://github.com/byvfx/go-notion-md-sync/releases)
+[![Go Version](https://img.shields.io/badge/Go-%3E%3D%201.21-blue)](https://golang.org)
+
 A powerful CLI tool for synchronizing markdown files with Notion pages. Built with Go for fast, reliable bidirectional sync between your local markdown files and Notion workspace.
 
 ## Features
@@ -17,6 +23,21 @@ A powerful CLI tool for synchronizing markdown files with Notion pages. Built wi
 
 ### 1. Installation
 
+#### Quick Install (Recommended)
+
+**Windows (PowerShell):**
+```powershell
+iwr -useb https://raw.githubusercontent.com/byvfx/go-notion-md-sync/main/scripts/install-windows.ps1 | iex
+```
+
+**Linux/macOS:**
+```bash
+curl -sSL https://raw.githubusercontent.com/byvfx/go-notion-md-sync/main/scripts/install-unix.sh | bash
+```
+
+#### Manual Installation
+Download from [GitHub Releases](https://github.com/byvfx/go-notion-md-sync/releases) and extract to your PATH.
+
 #### Build from Source
 ```bash
 git clone https://github.com/byvfx/go-notion-md-sync.git
@@ -24,10 +45,7 @@ cd go-notion-md-sync
 make build
 ```
 
-#### Or use Go install
-```bash
-go install github.com/byvfx/go-notion-md-sync/cmd/notion-md-sync@latest
-```
+📖 **Detailed installation guide**: [INSTALLATION.md](INSTALLATION.md)
 
 ### 2. Setup Notion Integration
 
@@ -42,31 +60,27 @@ go install github.com/byvfx/go-notion-md-sync/cmd/notion-md-sync@latest
    - Click "Share" → "Invite" → Add your integration
    - Copy the page ID from the URL (the long string after the last `/`)
 
-### 3. Configuration
+### 3. Initialize Your Project
 
-#### Method 1: Environment Variables (Recommended)
-
-Create a `.env` file:
 ```bash
-cp .env.example .env
+# Navigate to your project directory
+cd my-notion-project
+
+# Initialize configuration and sample files
+notion-md-sync init
 ```
 
-Edit `.env` with your actual values:
+This creates:
+- `config.yaml` - Main configuration
+- `.env` - Your Notion credentials (edit this!)
+- `docs/welcome.md` - Sample markdown file
+- `.env.example` - Template for sharing
+
+#### Edit Your Credentials
+Edit the `.env` file with your actual Notion credentials:
 ```bash
-# Your Notion integration token
 NOTION_MD_SYNC_NOTION_TOKEN=ntn_your_token_here
-
-# Your Notion parent page ID  
 NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID=your_page_id_here
-```
-
-#### Quick Setup (Alternative)
-```bash
-# Automated setup - creates config files and directories
-make setup
-
-# Edit .env with your token and page ID, then validate
-make validate
 ```
 
 #### Method 2: Config File
