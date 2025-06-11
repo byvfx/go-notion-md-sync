@@ -84,32 +84,32 @@ func (c *converter) BlocksToMarkdown(blocks []notion.Block) (string, error) {
 	for _, block := range blocks {
 		switch block.Type {
 		case "heading_1":
-			if richTexts := getRichTexts(block.Content, "heading_1"); len(richTexts) > 0 {
+			if richTexts := getRichTextsFromBlock(block, "heading_1"); len(richTexts) > 0 {
 				md.WriteString("# " + extractPlainText(richTexts) + "\n\n")
 			}
 
 		case "heading_2":
-			if richTexts := getRichTexts(block.Content, "heading_2"); len(richTexts) > 0 {
+			if richTexts := getRichTextsFromBlock(block, "heading_2"); len(richTexts) > 0 {
 				md.WriteString("## " + extractPlainText(richTexts) + "\n\n")
 			}
 
 		case "heading_3":
-			if richTexts := getRichTexts(block.Content, "heading_3"); len(richTexts) > 0 {
+			if richTexts := getRichTextsFromBlock(block, "heading_3"); len(richTexts) > 0 {
 				md.WriteString("### " + extractPlainText(richTexts) + "\n\n")
 			}
 
 		case "paragraph":
-			if richTexts := getRichTexts(block.Content, "paragraph"); len(richTexts) > 0 {
+			if richTexts := getRichTextsFromBlock(block, "paragraph"); len(richTexts) > 0 {
 				md.WriteString(extractPlainText(richTexts) + "\n\n")
 			}
 
 		case "bulleted_list_item":
-			if richTexts := getRichTexts(block.Content, "bulleted_list_item"); len(richTexts) > 0 {
+			if richTexts := getRichTextsFromBlock(block, "bulleted_list_item"); len(richTexts) > 0 {
 				md.WriteString("- " + extractPlainText(richTexts) + "\n")
 			}
 
 		case "numbered_list_item":
-			if richTexts := getRichTexts(block.Content, "numbered_list_item"); len(richTexts) > 0 {
+			if richTexts := getRichTextsFromBlock(block, "numbered_list_item"); len(richTexts) > 0 {
 				md.WriteString("1. " + extractPlainText(richTexts) + "\n")
 			}
 
@@ -241,8 +241,9 @@ func (c *converter) convertListToBlocks(list *ast.List, source []byte) []map[str
 	return blocks
 }
 
-func getRichTexts(content map[string]interface{}, blockType string) []interface{} {
-	if blockData, ok := content[blockType].(map[string]interface{}); ok {
+func getRichTextsFromBlock(block notion.Block, blockType string) []interface{} {
+	// Since Block.Content is inlined, the block type data is directly on the block
+	if blockData, ok := block.Content[blockType].(map[string]interface{}); ok {
 		if richTexts, ok := blockData["rich_text"].([]interface{}); ok {
 			return richTexts
 		}
