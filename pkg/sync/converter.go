@@ -84,46 +84,54 @@ func (c *converter) BlocksToMarkdown(blocks []notion.Block) (string, error) {
 	for _, block := range blocks {
 		switch block.Type {
 		case "heading_1":
-			if richTexts := getRichTextsFromBlock(block, "heading_1"); len(richTexts) > 0 {
-				md.WriteString("# " + extractPlainText(richTexts) + "\n\n")
+			if block.Heading1 != nil {
+				text := extractPlainTextFromRichText(block.Heading1.RichText)
+				md.WriteString("# " + text + "\n\n")
 			}
 
 		case "heading_2":
-			if richTexts := getRichTextsFromBlock(block, "heading_2"); len(richTexts) > 0 {
-				md.WriteString("## " + extractPlainText(richTexts) + "\n\n")
+			if block.Heading2 != nil {
+				text := extractPlainTextFromRichText(block.Heading2.RichText)
+				md.WriteString("## " + text + "\n\n")
 			}
 
 		case "heading_3":
-			if richTexts := getRichTextsFromBlock(block, "heading_3"); len(richTexts) > 0 {
-				md.WriteString("### " + extractPlainText(richTexts) + "\n\n")
+			if block.Heading3 != nil {
+				text := extractPlainTextFromRichText(block.Heading3.RichText)
+				md.WriteString("### " + text + "\n\n")
 			}
 
 		case "paragraph":
-			if richTexts := getRichTextsFromBlock(block, "paragraph"); len(richTexts) > 0 {
-				md.WriteString(extractPlainText(richTexts) + "\n\n")
+			if block.Paragraph != nil {
+				text := extractPlainTextFromRichText(block.Paragraph.RichText)
+				if strings.TrimSpace(text) != "" {
+					md.WriteString(text + "\n\n")
+				}
 			}
 
 		case "bulleted_list_item":
-			if richTexts := getRichTextsFromBlock(block, "bulleted_list_item"); len(richTexts) > 0 {
-				md.WriteString("- " + extractPlainText(richTexts) + "\n")
+			if block.BulletedListItem != nil {
+				text := extractPlainTextFromRichText(block.BulletedListItem.RichText)
+				md.WriteString("- " + text + "\n")
 			}
 
 		case "numbered_list_item":
-			if richTexts := getRichTextsFromBlock(block, "numbered_list_item"); len(richTexts) > 0 {
-				md.WriteString("1. " + extractPlainText(richTexts) + "\n")
+			if block.NumberedListItem != nil {
+				text := extractPlainTextFromRichText(block.NumberedListItem.RichText)
+				md.WriteString("1. " + text + "\n")
 			}
 
 		case "code":
-			if codeData, ok := block.Content["code"].(map[string]interface{}); ok {
-				if richTexts, ok := codeData["rich_text"].([]interface{}); ok {
-					language := ""
-					if lang, ok := codeData["language"].(string); ok {
-						language = lang
-					}
-					
-					code := extractPlainTextFromInterface(richTexts)
-					md.WriteString("```" + language + "\n" + code + "\n```\n\n")
-				}
+			if block.Code != nil {
+				code := extractPlainTextFromRichText(block.Code.RichText)
+				language := block.Code.Language
+				md.WriteString("```" + language + "\n" + code + "\n```\n\n")
+			}
+
+		case "quote":
+			if block.Quote != nil {
+				text := extractPlainTextFromRichText(block.Quote.RichText)
+				md.WriteString("> " + text + "\n\n")
 			}
 
 		case "divider":
@@ -241,39 +249,11 @@ func (c *converter) convertListToBlocks(list *ast.List, source []byte) []map[str
 	return blocks
 }
 
-func getRichTextsFromBlock(block notion.Block, blockType string) []interface{} {
-	// Since Block.Content is inlined, the block type data is directly on the block
-	if blockData, ok := block.Content[blockType].(map[string]interface{}); ok {
-		if richTexts, ok := blockData["rich_text"].([]interface{}); ok {
-			return richTexts
-		}
-	}
-	return nil
-}
-
-func extractPlainText(richTexts []interface{}) string {
+func extractPlainTextFromRichText(richTexts []notion.RichText) string {
 	var text strings.Builder
 	
 	for _, rt := range richTexts {
-		if richText, ok := rt.(map[string]interface{}); ok {
-			if plainText, ok := richText["plain_text"].(string); ok {
-				text.WriteString(plainText)
-			}
-		}
-	}
-	
-	return text.String()
-}
-
-func extractPlainTextFromInterface(richTexts []interface{}) string {
-	var text strings.Builder
-	
-	for _, rt := range richTexts {
-		if richText, ok := rt.(map[string]interface{}); ok {
-			if plainText, ok := richText["plain_text"].(string); ok {
-				text.WriteString(plainText)
-			}
-		}
+		text.WriteString(rt.PlainText)
 	}
 	
 	return text.String()

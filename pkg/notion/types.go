@@ -29,7 +29,28 @@ type Block struct {
 	Type        string                 `json:"type"`
 	CreatedTime time.Time              `json:"created_time,omitempty"`
 	HasChildren bool                   `json:"has_children,omitempty"`
-	Content     map[string]interface{} `json:",inline"`
+	
+	// Block type specific content - these are mutually exclusive based on Type
+	Paragraph         *RichTextBlock `json:"paragraph,omitempty"`
+	Heading1          *RichTextBlock `json:"heading_1,omitempty"`
+	Heading2          *RichTextBlock `json:"heading_2,omitempty"`
+	Heading3          *RichTextBlock `json:"heading_3,omitempty"`
+	BulletedListItem  *RichTextBlock `json:"bulleted_list_item,omitempty"`
+	NumberedListItem  *RichTextBlock `json:"numbered_list_item,omitempty"`
+	Code              *CodeBlock     `json:"code,omitempty"`
+	Quote             *RichTextBlock `json:"quote,omitempty"`
+	
+	// For unknown block types, keep the raw content
+	Content map[string]interface{} `json:",inline"`
+}
+
+type RichTextBlock struct {
+	RichText []RichText `json:"rich_text"`
+}
+
+type CodeBlock struct {
+	RichText []RichText `json:"rich_text"`
+	Language string     `json:"language"`
 }
 
 type RichText struct {
