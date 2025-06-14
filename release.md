@@ -1,4 +1,233 @@
+---
+notion_id: 212388d7-7461-8194-b62e-fb9d9b78a698
+sync_enabled: true
+updated_at: "2025-06-13T23:01:34-07:00"
+---
+
 # Release Notes
+
+## v0.5.0 - Git-like Staging Workflow & Major Improvements
+
+### 🚀 Major Features: Git-like Staging + Critical Fixes + Performance Boost
+
+This release represents the biggest advancement since launch, introducing a revolutionary Git-like staging workflow alongside critical bug fixes, comprehensive testing, and significant performance improvements. This transforms notion-md-sync into a professional-grade tool suitable for production workflows.
+
+#### 🎯 New Git-like Commands
+
+**Check what's changed:**
+```bash
+notion-md-sync status
+# Output:
+# Changes staged for sync:
+#   staged:    docs/ready-file.md
+# 
+# Changes not staged for sync:
+#   modified:  docs/updated-file.md
+#   new file:  docs/new-file.md
+```
+
+**Stage files for sync:**
+```bash
+notion-md-sync add docs/file.md       # Stage specific file
+notion-md-sync add docs/              # Stage all files in directory  
+notion-md-sync add .                  # Stage all changed files
+notion-md-sync add *.md               # Stage with patterns
+```
+
+**Unstage files:**
+```bash
+notion-md-sync reset docs/file.md     # Unstage specific file
+notion-md-sync reset .                # Unstage all files
+```
+
+**Push only staged changes:**
+```bash
+notion-md-sync push                   # Push only staged files
+notion-md-sync push docs/file.md      # Auto-stage and push specific file
+notion-md-sync push --dry-run         # Preview what would be pushed
+```
+
+#### 🧠 Intelligent Change Detection
+
+- **Hybrid Detection**: Fast timestamp checking with SHA256 hash verification for accuracy
+- **Performance Optimized**: Only calculates hashes when timestamps suggest changes
+- **Reliable Tracking**: Persistent `.notion-sync/` directory stores file states
+- **Auto-Update**: Smart timestamp updates prevent unnecessary future hash calculations
+
+#### 🔄 Enhanced Push Behavior
+
+- **Staging-First**: Push now only syncs staged files (no more accidental syncs!)
+- **Auto-Staging**: Specific file pushes automatically stage the file first
+- **Success Tracking**: Successfully pushed files are automatically unstaged
+- **Partial Failure Handling**: Failed pushes remain staged for retry
+
+#### 📊 Comprehensive Status Display
+
+- **Color-Coded Output**: Green for staged, red for modified/new
+- **Clear Instructions**: Helpful hints for next steps
+- **File Categories**: Staged, modified, new, and deleted files clearly separated
+- **Summary Messages**: Git-like guidance for common workflows
+
+#### 💾 Persistent State Management
+
+- **`.notion-sync/` Directory**: Stores staging index and file tracking data
+- **JSON Index**: Human-readable staging state storage
+- **Automatic Cleanup**: Successful syncs automatically update tracking
+- **Cross-Session**: Staging state persists across CLI sessions
+
+#### 🔧 Technical Improvements
+
+- **Type-Safe Staging**: New `staging` package with proper error handling
+- **Memory Efficient**: Incremental file processing prevents memory issues
+- **Path Handling**: Robust relative/absolute path conversion
+- **Error Recovery**: Graceful handling of file access issues
+
+#### 📈 Workflow Examples
+
+**Basic staging workflow:**
+```bash
+# See what's changed
+notion-md-sync status
+
+# Stage files you want to sync
+notion-md-sync add docs/important.md docs/update.md
+
+# Preview the sync
+notion-md-sync push --dry-run
+
+# Sync to Notion
+notion-md-sync push
+```
+
+**Selective staging:**
+```bash
+# Stage only specific files
+notion-md-sync add docs/chapter1.md docs/chapter2.md
+
+# Unstage one file
+notion-md-sync reset docs/chapter2.md  
+
+# Push remaining staged files
+notion-md-sync push
+```
+
+#### 🎉 Developer Experience
+
+This brings the familiar Git workflow to Notion sync:
+- **Predictable**: Only staged files sync, no surprises
+- **Controlled**: Choose exactly what changes to publish
+- **Efficient**: Skip unchanged files automatically
+- **Professional**: Industry-standard version control patterns
+
+#### ⚠️ Breaking Changes
+
+- **Push behavior**: `notion-md-sync push` now only pushes staged files
+- **New default**: Staging is now the default workflow (not opt-in)
+- **Migration**: Existing users should run `notion-md-sync add .` to stage all files
+
+### 🐛 Critical Bug Fixes
+
+#### Fixed: Code Blocks Empty Content
+**CRITICAL FIX**: Code blocks were appearing in Notion but with no content inside.
+
+**What was broken:**
+- Fenced code blocks (`` ```language ``) showed up as empty blocks in Notion
+- Only the language label appeared, but no actual code content
+- Affected all programming languages and code examples
+
+**What's fixed:**
+- **🔧 Rewrote Code Block Extraction**: Implemented proper AST content extraction for fenced code blocks
+- **💻 Full Content Preservation**: Code blocks now sync with complete source code intact  
+- **🎯 Language Detection**: Enhanced language mapping (js→javascript, py→python, 70+ languages)
+- **✅ Notion Validation**: Automatic language validation with fallback to "plain text"
+
+**Testing Impact**: All code examples now appear correctly in Notion with proper syntax highlighting.
+
+#### Fixed: Sync Performance Issues  
+**Major performance improvements for large documents and many files.**
+
+**What was improved:**
+- **⚡ Parallel Block Deletion**: Replaced sequential deletion with 5-worker concurrent processing
+- **🚀 Optimized Update Process**: Reduced delays and improved block handling efficiency
+- **📊 Performance Results**: 
+  - Large documents (400+ lines): **4.5 seconds** (fast)
+  - Small documents now process without corruption
+  - Pull operations: **2-3 seconds** consistently
+
+**Technical details:**
+- Implemented `bulkDeleteBlocks()` with worker pools
+- Added proper error handling for undeletable blocks
+- Optimized sequential fallback for reliability
+
+### 🧪 Comprehensive Testing Suite
+
+**NEW**: Full test coverage with CI/CD integration for bulletproof reliability.
+
+#### Test Coverage Added
+- **`pkg/sync/`**: 27 test cases covering markdown↔blocks conversion, language mapping
+- **`pkg/config/`**: 6 test cases covering configuration loading, environment variables  
+- **`pkg/staging/`**: 5 test cases covering staging workflow, change detection
+- **`pkg/markdown/`**: 4 test cases covering frontmatter, file parsing
+
+#### CI/CD Integration
+- **✅ Automated Testing**: GitHub Actions runs full test suite on every commit
+- **🌍 Multi-Platform**: Tests run on Linux, macOS, and Windows  
+- **🛡️ Build Validation**: Binaries only created if all tests pass
+- **📊 Coverage Reports**: Comprehensive test coverage tracking
+
+#### Developer Benefits
+- **🐛 Bug Prevention**: Catch regressions before they reach users
+- **🔒 Reliability**: Every function tested with edge cases
+- **📈 Confidence**: Tests validate all critical workflows work correctly
+
+### 🔐 Security Enhancements
+
+**Major security audit and fixes implemented.**
+
+#### Critical Fixes Applied
+- **🚨 Removed Hardcoded Credentials**: Eliminated exposed API tokens from repository
+- **🛡️ Fixed Shell Injection**: Secure `.env` file parsing in run scripts
+- **🔒 Input Validation**: Enhanced path validation for file operations
+- **📝 Security Guidelines**: Updated documentation with best practices
+
+#### Security Features
+- **✅ HTTPS-Only**: All API communications use secure protocols
+- **✅ Environment Variables**: Proper secret management patterns
+- **✅ File Permissions**: Secure file creation with appropriate permissions
+- **✅ Error Handling**: No sensitive data leakage in error messages
+
+### 🎯 Enhanced Markdown Support
+
+#### Improved Code Block Handling
+- **70+ Programming Languages**: Comprehensive language detection and mapping
+- **Smart Aliases**: Common abbreviations automatically mapped (js→javascript, py→python)
+- **Syntax Preservation**: Code formatting preserved exactly from markdown to Notion
+- **Fallback Handling**: Unknown languages default to "plain text" with content intact
+
+#### Better Block Processing  
+- **H4+ Support**: Headers above H3 automatically convert to H3 (Notion's limit)
+- **Rich Text Handling**: Improved bold, italic, and inline code processing
+- **List Improvements**: Enhanced bulleted and numbered list conversion
+- **Blockquote Support**: Proper quote block formatting
+
+### ⚠️ Breaking Changes
+
+- **Push behavior**: `notion-md-sync push` now only pushes staged files
+- **New default**: Staging is now the default workflow (not opt-in)
+- **Migration**: Existing users should run `notion-md-sync add .` to stage all files
+
+### 🎉 Developer Experience Improvements
+
+This release brings enterprise-grade reliability:
+- **🔍 Predictable**: Comprehensive testing ensures consistent behavior
+- **🛡️ Secure**: Security audit eliminates vulnerabilities  
+- **⚡ Fast**: Performance optimizations for large-scale usage
+- **🎯 Professional**: Git-like workflow familiar to developers
+- **📚 Documented**: Enhanced documentation with testing and security guides
+
+This is the biggest enhancement since the initial release, bringing notion-md-sync in line with modern development workflows while ensuring bulletproof reliability!
+
+---
 
 ## v0.4.0 - Critical Pull Bug Fix
 

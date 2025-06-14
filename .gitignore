@@ -28,6 +28,9 @@ go.work.sum
 .env
 config/config.yaml
 
+# Local state and staging (user-specific)
+.notion-sync/
+
 # Build artifacts
 bin/
 

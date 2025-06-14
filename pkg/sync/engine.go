@@ -238,7 +238,8 @@ func (e *engine) createNotionPage(ctx context.Context, title string, blocks []ma
 }
 
 func (e *engine) updateNotionPage(ctx context.Context, pageID, title string, blocks []map[string]interface{}) error {
-	// Update page blocks
+	// Use the original slower but safer method for updates to preserve page IDs
+	// The delete-and-recreate approach would change page IDs and break links
 	return e.notion.UpdatePageBlocks(ctx, pageID, blocks)
 }
 

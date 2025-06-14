@@ -11,10 +11,14 @@ A powerful CLI tool for synchronizing markdown files with Notion pages. Built wi
 ## Features
 
 - 🔄 **Bidirectional Sync**: Push markdown to Notion or pull Notion pages to markdown
+- 🎯 **Git-like Staging**: Stage files for sync with `add`, `status`, and `reset` commands
 - 📝 **Frontmatter Support**: Automatic metadata management with YAML frontmatter
+- 💾 **Smart Change Detection**: Hybrid timestamp and content-based change tracking
 - 👀 **File Watching**: Real-time auto-sync when files change
 - 🔒 **Secure Configuration**: Environment variable support for API tokens
-- 🎯 **Flexible Mapping**: Choose between filename or frontmatter-based page mapping
+- 🗂️ **Flexible Mapping**: Choose between filename or frontmatter-based page mapping
+- 🚀 **High Performance**: Concurrent processing with optimized block operations
+- 🧪 **Comprehensive Testing**: Full test coverage with CI/CD validation
 - ⚡ **Fast & Reliable**: Built with Go for performance and reliability
 
 ## Quick Start
@@ -109,6 +113,39 @@ sync:
 ```
 
 ## Usage
+
+### Git-like Staging Workflow
+
+The tool now includes a Git-like staging system for better control over which files to sync:
+
+```bash
+# Check status of all markdown files
+notion-md-sync status
+
+# Stage specific files for sync
+notion-md-sync add docs/my-file.md docs/another-file.md
+
+# Stage all changed files
+notion-md-sync add .
+
+# Remove files from staging
+notion-md-sync reset docs/my-file.md
+
+# Clear all staged files
+notion-md-sync reset
+
+# Push only staged files
+notion-md-sync push
+
+# Pull changes from Notion
+notion-md-sync pull
+```
+
+The staging system provides:
+- **Smart change detection** using timestamps and content hashes
+- **Selective syncing** - only sync the files you want
+- **Status overview** showing which files are modified, staged, or synced
+- **Concurrent processing** for faster operations
 
 ### Basic Commands
 
@@ -263,11 +300,16 @@ This is the markdown content that syncs with Notion.
 
 ### Supported Markdown Features
 
-- **Headings**: `# ## ###` (H1, H2, H3)
-- **Paragraphs**: Regular text blocks
-- **Lists**: Both bullet (`-`) and numbered (`1.`)
-- **Code blocks**: `` ```language `` 
-- **Emphasis**: `**bold**` and `*italic*`
+- **Headings**: `# ## ###` (H1, H2, H3) - H4+ automatically convert to H3
+- **Paragraphs**: Regular text blocks with proper formatting
+- **Lists**: Both bullet (`-`) and numbered (`1.`) lists
+- **Code blocks**: Fenced code blocks (`` ```language ``) with language detection
+  - Supports 70+ programming languages 
+  - Auto-maps common aliases (`js` → `javascript`, `py` → `python`)
+  - Preserves syntax highlighting in Notion
+- **Blockquotes**: `> quoted text`
+- **Emphasis**: `**bold**`, `*italic*`, and `inline code`
+- **Dividers**: `---` horizontal rules
 
 ## Examples
 
@@ -291,8 +333,9 @@ This is a test document that will be synced to Notion.
 - Frontmatter metadata tracking
 EOF
 
-# 2. Push to Notion
-./scripts/run-with-env.sh push docs/my-new-page.md --verbose
+# 2. Stage and push to Notion
+notion-md-sync add docs/my-new-page.md
+notion-md-sync push --verbose
 
 # 3. Check that notion_id was added to frontmatter
 cat docs/my-new-page.md
@@ -302,21 +345,38 @@ cat docs/my-new-page.md
 
 ```bash
 # Pull all pages from your Notion workspace
-./scripts/run-with-env.sh pull --verbose
+notion-md-sync pull --verbose
 
 # Check what was downloaded
 ls -la docs/
 ```
 
-### Example 3: Set Up Auto-Sync
+### Example 3: Git-like Staging Workflow
 
 ```bash
-# Start watching for file changes
-./scripts/run-with-env.sh watch --verbose
+# Check which files have changed
+notion-md-sync status
+
+# Stage specific files
+notion-md-sync add docs/file1.md docs/file2.md
+
+# Or stage all changed files
+notion-md-sync add .
+
+# Review what's staged and push
+notion-md-sync status
+notion-md-sync push --verbose
+```
+
+### Example 4: Set Up Auto-Sync
+
+```bash
+# Start watching for file changes (uses staging automatically)
+notion-md-sync watch --verbose
 
 # In another terminal, edit files:
 echo "New content" >> docs/my-page.md
-# The file will automatically sync to Notion!
+# The file will automatically be staged and synced to Notion!
 ```
 
 ## Configuration Options
@@ -378,6 +438,30 @@ make lint           # Run linter
 make fmt            # Format code
 make clean          # Clean build artifacts
 ```
+
+### Testing
+The project includes comprehensive test coverage:
+
+```bash
+# Run all tests
+go test ./...
+
+# Run tests with coverage
+go test -v -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
+
+# Run specific test packages
+go test ./pkg/sync      # Converter and markdown processing
+go test ./pkg/config    # Configuration loading
+go test ./pkg/staging   # Git-like staging system
+```
+
+**Test Coverage:**
+- **Converter**: Markdown ↔ Notion block conversion, language detection
+- **Config**: Environment variables, YAML parsing, validation  
+- **Staging**: File change detection, staging workflow, persistence
+- **Parser**: Frontmatter extraction, markdown processing
+- **CI/CD**: Automated testing on multiple platforms (Linux, macOS, Windows)
 
 ### Environment Setup
 ```bash

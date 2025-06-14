@@ -61,8 +61,16 @@ func (c *converter) MarkdownToBlocks(content string) ([]map[string]interface{}, 
 
 		case ast.KindCodeBlock:
 			codeBlock := n.(*ast.CodeBlock)
-			text := extractTextFromNode(codeBlock, source)
-			language := "" // TODO: Extract language from fenced code block info
+			text := extractCodeBlockContent(codeBlock, source)
+			language := extractLanguageFromCodeBlock(codeBlock, source)
+			block := createCodeBlock(text, language)
+			blocks = append(blocks, block)
+			return ast.WalkSkipChildren, nil
+			
+		case ast.KindFencedCodeBlock:
+			fencedCodeBlock := n.(*ast.FencedCodeBlock)
+			text := extractFencedCodeBlockContent(fencedCodeBlock, source)
+			language := extractLanguageFromFencedCodeBlock(fencedCodeBlock, source)
 			block := createCodeBlock(text, language)
 			blocks = append(blocks, block)
 			return ast.WalkSkipChildren, nil
@@ -202,6 +210,14 @@ func createParagraphBlock(text string) map[string]interface{} {
 }
 
 func createCodeBlock(text, language string) map[string]interface{} {
+	// Notion requires a valid language, use "plain text" for empty languages
+	if language == "" {
+		language = "plain text"
+	}
+	
+	// Validate language against Notion's supported languages
+	language = normalizeNotionLanguage(language)
+	
 	return map[string]interface{}{
 		"type": "code",
 		"code": map[string]interface{}{
@@ -216,6 +232,54 @@ func createCodeBlock(text, language string) map[string]interface{} {
 			"language": language,
 		},
 	}
+}
+
+func normalizeNotionLanguage(lang string) string {
+	// Map common language names to Notion's expected values
+	langMap := map[string]string{
+		"js":         "javascript",
+		"ts":         "typescript", 
+		"py":         "python",
+		"rb":         "ruby",
+		"sh":         "shell",
+		"yml":        "yaml",
+		"dockerfile": "docker",
+		"":           "plain text",
+	}
+	
+	// Convert to lowercase for comparison
+	langLower := strings.ToLower(lang)
+	
+	// Check if we have a mapping
+	if mapped, exists := langMap[langLower]; exists {
+		return mapped
+	}
+	
+	// Check if it's already a valid Notion language
+	validLanguages := []string{
+		"abap", "agda", "arduino", "ascii art", "assembly", "bash", "basic", "bnf", 
+		"c", "c#", "c++", "clojure", "coffeescript", "coq", "css", "dart", "dhall", 
+		"diff", "docker", "ebnf", "elixir", "elm", "erlang", "f#", "flow", "fortran", 
+		"gherkin", "glsl", "go", "graphql", "groovy", "haskell", "hcl", "html", 
+		"idris", "java", "javascript", "json", "julia", "kotlin", "latex", "less", 
+		"lisp", "livescript", "llvm ir", "lua", "makefile", "markdown", "markup", 
+		"matlab", "mathematica", "mermaid", "nix", "notion formula", "objective-c", 
+		"ocaml", "pascal", "perl", "php", "plain text", "powershell", "prolog", 
+		"protobuf", "purescript", "python", "r", "racket", "reason", "ruby", "rust", 
+		"sass", "scala", "scheme", "scss", "shell", "smalltalk", "solidity", "sql", 
+		"swift", "toml", "typescript", "vb.net", "verilog", "vhdl", "visual basic", 
+		"webassembly", "xml", "yaml", "java/c/c++/c#", "notionscript",
+	}
+	
+	// Check if the language is valid as-is
+	for _, validLang := range validLanguages {
+		if langLower == validLang {
+			return validLang
+		}
+	}
+	
+	// If not found, default to plain text
+	return "plain text"
 }
 
 func (c *converter) convertListToBlocks(list *ast.List, source []byte) []map[string]interface{} {
@@ -257,4 +321,49 @@ func extractPlainTextFromRichText(richTexts []notion.RichText) string {
 	}
 	
 	return text.String()
+}
+
+func extractLanguageFromCodeBlock(codeBlock *ast.CodeBlock, source []byte) string {
+	// For indented code blocks, there's typically no language info
+	return ""
+}
+
+func extractCodeBlockContent(codeBlock *ast.CodeBlock, source []byte) string {
+	var buf strings.Builder
+	
+	// For code blocks, iterate through lines
+	for i := 0; i < codeBlock.Lines().Len(); i++ {
+		line := codeBlock.Lines().At(i)
+		buf.Write(line.Value(source))
+	}
+	
+	return strings.TrimRight(buf.String(), "\n")
+}
+
+func extractFencedCodeBlockContent(fencedCodeBlock *ast.FencedCodeBlock, source []byte) string {
+	var buf strings.Builder
+	
+	// For fenced code blocks, iterate through lines
+	for i := 0; i < fencedCodeBlock.Lines().Len(); i++ {
+		line := fencedCodeBlock.Lines().At(i)
+		buf.Write(line.Value(source))
+	}
+	
+	return strings.TrimRight(buf.String(), "\n")
+}
+
+func extractLanguageFromFencedCodeBlock(fencedCodeBlock *ast.FencedCodeBlock, source []byte) string {
+	// Get the info string from the fenced code block
+	if fencedCodeBlock.Info != nil {
+		infoText := string(fencedCodeBlock.Info.Text(source))
+		// The language is typically the first word in the info string
+		if len(infoText) > 0 {
+			// Split by space and take the first part
+			parts := strings.Fields(infoText)
+			if len(parts) > 0 {
+				return parts[0]
+			}
+		}
+	}
+	return ""
 }

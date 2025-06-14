@@ -21,6 +21,8 @@ type Client interface {
 	GetPageBlocks(ctx context.Context, pageID string) ([]Block, error)
 	CreatePage(ctx context.Context, parentID string, properties map[string]interface{}) (*Page, error)
 	UpdatePageBlocks(ctx context.Context, pageID string, blocks []map[string]interface{}) error
+	DeletePage(ctx context.Context, pageID string) error
+	RecreatePageWithBlocks(ctx context.Context, parentID string, properties map[string]interface{}, blocks []map[string]interface{}) (*Page, error)
 	SearchPages(ctx context.Context, query string) ([]Page, error)
 	GetChildPages(ctx context.Context, parentID string) ([]Page, error)
 }
@@ -152,20 +154,112 @@ func (c *client) CreatePage(ctx context.Context, parentID string, properties map
 }
 
 func (c *client) UpdatePageBlocks(ctx context.Context, pageID string, blocks []map[string]interface{}) error {
-	updateReq := map[string]interface{}{
-		"children": blocks,
+	// Clear existing blocks first using sequential deletion for reliability
+	if err := c.clearPageBlocks(ctx, pageID); err != nil {
+		return fmt.Errorf("failed to clear existing blocks: %w", err)
 	}
 
-	resp, err := c.doRequest(ctx, "PATCH", "/blocks/"+pageID+"/children", updateReq)
+	// Wait a bit for Notion to process deletions
+	time.Sleep(200 * time.Millisecond)
+
+	// Add new blocks in chunks
+	const maxBlocksPerRequest = 100
+	
+	for i := 0; i < len(blocks); i += maxBlocksPerRequest {
+		end := i + maxBlocksPerRequest
+		if end > len(blocks) {
+			end = len(blocks)
+		}
+		
+		chunk := blocks[i:end]
+		
+		updateReq := map[string]interface{}{
+			"children": chunk,
+		}
+
+		resp, err := c.doRequest(ctx, "PATCH", "/blocks/"+pageID+"/children", updateReq)
+		if err != nil {
+			if apiErr, ok := err.(*NotionAPIError); ok {
+				apiErr.PageID = pageID
+			}
+			return fmt.Errorf("failed to update blocks for page %s (chunk %d-%d): %w", pageID, i+1, end, err)
+		}
+		resp.Body.Close()
+		
+		// Small delay between chunks to avoid rate limiting
+		if end < len(blocks) {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
+	return nil
+}
+
+
+func (c *client) clearPageBlocks(ctx context.Context, pageID string) error {
+	// Get existing blocks
+	existingBlocks, err := c.GetPageBlocks(ctx, pageID)
+	if err != nil {
+		return fmt.Errorf("failed to get existing blocks: %w", err)
+	}
+
+	// Delete existing blocks sequentially for reliability
+	for _, block := range existingBlocks {
+		_, err := c.doRequest(ctx, "DELETE", "/blocks/"+block.ID, nil)
+		if err != nil {
+			// Log warning but continue - some blocks might not be deletable
+			fmt.Printf("Warning: failed to delete block %s: %v\n", block.ID, err)
+			continue
+		}
+		
+		// Small delay to avoid rate limiting
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	return nil
+}
+
+func (c *client) DeletePage(ctx context.Context, pageID string) error {
+	// Archive the page (Notion doesn't allow true deletion)
+	updateReq := map[string]interface{}{
+		"archived": true,
+	}
+
+	resp, err := c.doRequest(ctx, "PATCH", "/pages/"+pageID, updateReq)
 	if err != nil {
 		if apiErr, ok := err.(*NotionAPIError); ok {
 			apiErr.PageID = pageID
 		}
-		return fmt.Errorf("failed to update blocks for page %s: %w", pageID, err)
+		return fmt.Errorf("failed to delete page %s: %w", pageID, err)
+	}
+	resp.Body.Close()
+
+	return nil
+}
+
+func (c *client) RecreatePageWithBlocks(ctx context.Context, parentID string, properties map[string]interface{}, blocks []map[string]interface{}) (*Page, error) {
+	// Create the page with initial content
+	createReq := map[string]interface{}{
+		"parent": map[string]interface{}{
+			"type":    "page_id",
+			"page_id": parentID,
+		},
+		"properties": properties,
+		"children":   blocks,
+	}
+
+	resp, err := c.doRequest(ctx, "POST", "/pages", createReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to recreate page: %w", err)
 	}
 	defer resp.Body.Close()
 
-	return nil
+	var page Page
+	if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+		return nil, fmt.Errorf("failed to decode recreated page response: %w", err)
+	}
+
+	return &page, nil
 }
 
 func (c *client) SearchPages(ctx context.Context, query string) ([]Page, error) {
