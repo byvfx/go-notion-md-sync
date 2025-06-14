@@ -1,5 +1,58 @@
 # Release Notes
 
+## v0.4.0 - Critical Pull Bug Fix
+
+### 🐛 Major Fix: Pull Command Now Extracts Content Properly
+
+This release fixes a critical bug where the `pull` command was only extracting metadata from Notion pages instead of the actual page content, resulting in nearly empty markdown files.
+
+#### What Was Broken
+- `notion-md-sync pull` would create markdown files with only frontmatter metadata
+- Page content (paragraphs, headings, lists, etc.) was not being converted to markdown
+- Users would get empty files despite having content in their Notion pages
+
+#### What's Fixed
+- **🔧 Complete Block Structure Rewrite**: Rebuilt the Notion API block handling from scratch
+- **📄 Proper Content Extraction**: Pull command now correctly extracts all text content from Notion blocks
+- **🎯 Type-Safe Block Parsing**: Replaced error-prone interface{} casting with proper typed structs
+- **🔄 Python Parity**: Go implementation now matches the working Python version's approach
+
+#### Technical Details
+- **Fixed Block struct**: Removed incorrect `json:",inline"` and added proper typed fields for each block type
+- **Rewrote BlocksToMarkdown converter**: Now directly accesses typed block fields (`block.Paragraph.RichText`)
+- **Improved text extraction**: New `extractPlainTextFromRichText()` function works with proper Notion API types
+- **Added support for**: Paragraphs, headings (H1-H3), lists, code blocks, quotes, and dividers
+
+#### For Existing Users
+**Critical Update Required**: This is a major fix that completely resolves the empty file issue.
+
+**Reinstall to get the fix:**
+```powershell
+# Windows
+iwr -useb https://raw.githubusercontent.com/byvfx/go-notion-md-sync/main/scripts/install-windows.ps1 | iex
+
+# Linux/macOS  
+curl -sSL https://raw.githubusercontent.com/byvfx/go-notion-md-sync/main/scripts/install-unix.sh | bash
+```
+
+**Test your pull commands:**
+```bash
+cd your-project-directory
+notion-md-sync pull --verbose  # Should now extract full content!
+```
+
+#### Supported Notion Block Types
+- ✅ **Headings**: H1, H2, H3 with proper markdown conversion
+- ✅ **Paragraphs**: Full text content with formatting preservation
+- ✅ **Lists**: Both bulleted and numbered lists
+- ✅ **Code Blocks**: With language syntax highlighting
+- ✅ **Quotes**: Blockquote formatting
+- ✅ **Dividers**: Horizontal rule conversion
+
+This fix ensures the complete bidirectional sync experience that was originally intended. Pull operations now work as expected, matching the functionality of the proven Python implementation.
+
+---
+
 ## v0.3.0 - Configuration Bug Fix
 
 ### 🐛 Critical Fix: Automatic .env File Loading

@@ -1,0 +1,18 @@
+# notion-md-sync configuration
+notion:
+  token: ""  # Set via NOTION_MD_SYNC_NOTION_TOKEN environment variable
+  parent_page_id: ""  # Set via NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID environment variable
+
+sync:
+  direction: push
+  conflict_resolution: newer
+
+directories:
+  markdown_root: ./docs
+  excluded_patterns:
+    - "*.tmp"
+    - "node_modules/**"
+    - ".git/**"
+
+mapping:
+  strategy: frontmatter
