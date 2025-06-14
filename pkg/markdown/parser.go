@@ -104,12 +104,12 @@ func (p *markdownParser) CreateMarkdownWithFrontmatter(filePath string, metadata
 	// Write frontmatter if metadata exists
 	if len(metadata) > 0 {
 		buf.WriteString("---\n")
-		
+
 		yamlData, err := yaml.Marshal(metadata)
 		if err != nil {
 			return fmt.Errorf("failed to marshal metadata to YAML: %w", err)
 		}
-		
+
 		buf.Write(yamlData)
 		buf.WriteString("---\n\n")
 	}
@@ -129,7 +129,7 @@ func (p *markdownParser) CreateMarkdownWithFrontmatter(filePath string, metadata
 
 func ExtractTextFromAST(node ast.Node, source []byte) string {
 	var buf bytes.Buffer
-	
+
 	ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if entering {
 			switch n.Kind() {
@@ -143,13 +143,13 @@ func ExtractTextFromAST(node ast.Node, source []byte) string {
 		}
 		return ast.WalkContinue, nil
 	})
-	
+
 	return buf.String()
 }
 
 func GetHeadings(node ast.Node, source []byte) []Heading {
 	var headings []Heading
-	
+
 	ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if entering && n.Kind() == ast.KindHeading {
 			heading := n.(*ast.Heading)
@@ -161,7 +161,7 @@ func GetHeadings(node ast.Node, source []byte) []Heading {
 		}
 		return ast.WalkContinue, nil
 	})
-	
+
 	return headings
 }
 

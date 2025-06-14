@@ -45,7 +45,7 @@ func Load(configPath string) (*Config, error) {
 	// Environment variable support
 	v.SetEnvPrefix("NOTION_MD_SYNC")
 	v.AutomaticEnv()
-	
+
 	// Bind specific environment variables for nested config
 	v.BindEnv("notion.token", "NOTION_MD_SYNC_NOTION_TOKEN")
 	v.BindEnv("notion.parent_page_id", "NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID")
@@ -59,7 +59,7 @@ func Load(configPath string) (*Config, error) {
 		v.SetConfigType("yaml")
 		v.AddConfigPath(".")
 		v.AddConfigPath("./configs")
-		
+
 		if home, err := os.UserHomeDir(); err == nil {
 			v.AddConfigPath(filepath.Join(home, ".notion-md-sync"))
 		}
@@ -93,7 +93,7 @@ func loadEnvFile() {
 	if err := gotenv.Load(".env"); err == nil {
 		return
 	}
-	
+
 	// Try to load from home directory
 	if home, err := os.UserHomeDir(); err == nil {
 		envPath := filepath.Join(home, ".notion-md-sync", ".env")
@@ -101,19 +101,19 @@ func loadEnvFile() {
 			return
 		}
 	}
-	
+
 	// Try to find .env in parent directories (walk up to 3 levels)
 	currentDir, err := os.Getwd()
 	if err != nil {
 		return
 	}
-	
+
 	for i := 0; i < 3; i++ {
 		envPath := filepath.Join(currentDir, ".env")
 		if err := gotenv.Load(envPath); err == nil {
 			return
 		}
-		
+
 		parentDir := filepath.Dir(currentDir)
 		if parentDir == currentDir {
 			break // reached root

@@ -76,7 +76,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		// Push specific file - auto-stage it first
 		filePath := args[0]
-		
+
 		// Convert to relative path if needed
 		if filepath.IsAbs(filePath) {
 			relPath, err := filepath.Rel(workingDir, filePath)
@@ -90,7 +90,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 		if err := stagingArea.AddFile(filePath); err != nil {
 			return fmt.Errorf("failed to stage file %s: %w", filePath, err)
 		}
-		
+
 		filesToPush = []string{filePath}
 		printVerbose("Auto-staged and will push: %s", filePath)
 	} else {
@@ -140,7 +140,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 			for relPath := range jobs {
 				fullPath := filepath.Join(workingDir, relPath)
 				printVerbose("Pushing file: %s", relPath)
-				
+
 				err := engine.SyncFileToNotion(ctx, fullPath)
 				results <- pushResult{
 					file:    relPath,
@@ -184,7 +184,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 	if len(successfulPushes) > 0 {
 		fmt.Printf("Successfully pushed %d file(s) to Notion.\n", len(successfulPushes))
 	}
-	
+
 	if len(failedPushes) > 0 {
 		fmt.Printf("Failed to push %d file(s). These files remain staged.\n", len(failedPushes))
 		return fmt.Errorf("some files failed to push")

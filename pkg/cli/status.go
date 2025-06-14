@@ -90,7 +90,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		fmt.Println("\nChanges not staged for sync:")
 		fmt.Println("  (use \"notion-md-sync add <file>...\" to stage changes)")
 		fmt.Println()
-		
+
 		for _, file := range modifiedFiles {
 			fmt.Printf("        \033[31mmodified:\033[0m %s\n", file)
 		}

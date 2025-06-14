@@ -24,7 +24,7 @@ func init() {
 
 func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println("🚀 Initializing notion-md-sync project...")
-	
+
 	// Check if already initialized
 	if _, err := os.Stat("config.yaml"); err == nil {
 		fmt.Println("⚠️  Project already initialized (config.yaml exists)")

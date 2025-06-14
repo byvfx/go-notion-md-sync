@@ -164,15 +164,15 @@ func (c *client) UpdatePageBlocks(ctx context.Context, pageID string, blocks []m
 
 	// Add new blocks in chunks
 	const maxBlocksPerRequest = 100
-	
+
 	for i := 0; i < len(blocks); i += maxBlocksPerRequest {
 		end := i + maxBlocksPerRequest
 		if end > len(blocks) {
 			end = len(blocks)
 		}
-		
+
 		chunk := blocks[i:end]
-		
+
 		updateReq := map[string]interface{}{
 			"children": chunk,
 		}
@@ -185,7 +185,7 @@ func (c *client) UpdatePageBlocks(ctx context.Context, pageID string, blocks []m
 			return fmt.Errorf("failed to update blocks for page %s (chunk %d-%d): %w", pageID, i+1, end, err)
 		}
 		resp.Body.Close()
-		
+
 		// Small delay between chunks to avoid rate limiting
 		if end < len(blocks) {
 			time.Sleep(100 * time.Millisecond)
@@ -194,7 +194,6 @@ func (c *client) UpdatePageBlocks(ctx context.Context, pageID string, blocks []m
 
 	return nil
 }
-
 
 func (c *client) clearPageBlocks(ctx context.Context, pageID string) error {
 	// Get existing blocks
@@ -211,7 +210,7 @@ func (c *client) clearPageBlocks(ctx context.Context, pageID string) error {
 			fmt.Printf("Warning: failed to delete block %s: %v\n", block.ID, err)
 			continue
 		}
-		
+
 		// Small delay to avoid rate limiting
 		time.Sleep(50 * time.Millisecond)
 	}

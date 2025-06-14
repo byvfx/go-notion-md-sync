@@ -108,11 +108,11 @@ func performDryRun(ctx context.Context, workingDir, specificFile, direction stri
 	actionVerb := getActionVerb(direction)
 	fmt.Printf("Found %d markdown files in %s\n", len(files), workingDir)
 	fmt.Printf("The following files would be %s:\n", actionVerb)
-	
+
 	for _, file := range files {
 		fmt.Printf("  %s\n", file)
 	}
-	
+
 	return nil
 }
 

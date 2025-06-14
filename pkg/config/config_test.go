@@ -71,8 +71,8 @@ mapping:
 		t.Errorf("Expected 2 excluded patterns, got %d", len(cfg.Directories.ExcludedPatterns))
 	}
 
-	if cfg.Mapping.Strategy != "filename" {
-		t.Errorf("Expected default strategy 'filename', got '%s'", cfg.Mapping.Strategy)
+	if cfg.Mapping.Strategy != "frontmatter" {
+		t.Errorf("Expected strategy 'frontmatter', got '%s'", cfg.Mapping.Strategy)
 	}
 }
 

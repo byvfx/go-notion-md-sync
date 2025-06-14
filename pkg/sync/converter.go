@@ -66,7 +66,7 @@ func (c *converter) MarkdownToBlocks(content string) ([]map[string]interface{}, 
 			block := createCodeBlock(text, language)
 			blocks = append(blocks, block)
 			return ast.WalkSkipChildren, nil
-			
+
 		case ast.KindFencedCodeBlock:
 			fencedCodeBlock := n.(*ast.FencedCodeBlock)
 			text := extractFencedCodeBlockContent(fencedCodeBlock, source)
@@ -154,7 +154,7 @@ func (c *converter) BlocksToMarkdown(blocks []notion.Block) (string, error) {
 
 func extractTextFromNode(node ast.Node, source []byte) string {
 	var buf strings.Builder
-	
+
 	ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if entering {
 			switch n.Kind() {
@@ -168,7 +168,7 @@ func extractTextFromNode(node ast.Node, source []byte) string {
 		}
 		return ast.WalkContinue, nil
 	})
-	
+
 	return buf.String()
 }
 
@@ -214,10 +214,10 @@ func createCodeBlock(text, language string) map[string]interface{} {
 	if language == "" {
 		language = "plain text"
 	}
-	
+
 	// Validate language against Notion's supported languages
 	language = normalizeNotionLanguage(language)
-	
+
 	return map[string]interface{}{
 		"type": "code",
 		"code": map[string]interface{}{
@@ -238,7 +238,7 @@ func normalizeNotionLanguage(lang string) string {
 	// Map common language names to Notion's expected values
 	langMap := map[string]string{
 		"js":         "javascript",
-		"ts":         "typescript", 
+		"ts":         "typescript",
 		"py":         "python",
 		"rb":         "ruby",
 		"sh":         "shell",
@@ -246,45 +246,45 @@ func normalizeNotionLanguage(lang string) string {
 		"dockerfile": "docker",
 		"":           "plain text",
 	}
-	
+
 	// Convert to lowercase for comparison
 	langLower := strings.ToLower(lang)
-	
+
 	// Check if we have a mapping
 	if mapped, exists := langMap[langLower]; exists {
 		return mapped
 	}
-	
+
 	// Check if it's already a valid Notion language
 	validLanguages := []string{
-		"abap", "agda", "arduino", "ascii art", "assembly", "bash", "basic", "bnf", 
-		"c", "c#", "c++", "clojure", "coffeescript", "coq", "css", "dart", "dhall", 
-		"diff", "docker", "ebnf", "elixir", "elm", "erlang", "f#", "flow", "fortran", 
-		"gherkin", "glsl", "go", "graphql", "groovy", "haskell", "hcl", "html", 
-		"idris", "java", "javascript", "json", "julia", "kotlin", "latex", "less", 
-		"lisp", "livescript", "llvm ir", "lua", "makefile", "markdown", "markup", 
-		"matlab", "mathematica", "mermaid", "nix", "notion formula", "objective-c", 
-		"ocaml", "pascal", "perl", "php", "plain text", "powershell", "prolog", 
-		"protobuf", "purescript", "python", "r", "racket", "reason", "ruby", "rust", 
-		"sass", "scala", "scheme", "scss", "shell", "smalltalk", "solidity", "sql", 
-		"swift", "toml", "typescript", "vb.net", "verilog", "vhdl", "visual basic", 
+		"abap", "agda", "arduino", "ascii art", "assembly", "bash", "basic", "bnf",
+		"c", "c#", "c++", "clojure", "coffeescript", "coq", "css", "dart", "dhall",
+		"diff", "docker", "ebnf", "elixir", "elm", "erlang", "f#", "flow", "fortran",
+		"gherkin", "glsl", "go", "graphql", "groovy", "haskell", "hcl", "html",
+		"idris", "java", "javascript", "json", "julia", "kotlin", "latex", "less",
+		"lisp", "livescript", "llvm ir", "lua", "makefile", "markdown", "markup",
+		"matlab", "mathematica", "mermaid", "nix", "notion formula", "objective-c",
+		"ocaml", "pascal", "perl", "php", "plain text", "powershell", "prolog",
+		"protobuf", "purescript", "python", "r", "racket", "reason", "ruby", "rust",
+		"sass", "scala", "scheme", "scss", "shell", "smalltalk", "solidity", "sql",
+		"swift", "toml", "typescript", "vb.net", "verilog", "vhdl", "visual basic",
 		"webassembly", "xml", "yaml", "java/c/c++/c#", "notionscript",
 	}
-	
+
 	// Check if the language is valid as-is
 	for _, validLang := range validLanguages {
 		if langLower == validLang {
 			return validLang
 		}
 	}
-	
+
 	// If not found, default to plain text
 	return "plain text"
 }
 
 func (c *converter) convertListToBlocks(list *ast.List, source []byte) []map[string]interface{} {
 	var blocks []map[string]interface{}
-	
+
 	for child := list.FirstChild(); child != nil; child = child.NextSibling() {
 		if listItem, ok := child.(*ast.ListItem); ok {
 			text := extractTextFromNode(listItem, source)
@@ -292,7 +292,7 @@ func (c *converter) convertListToBlocks(list *ast.List, source []byte) []map[str
 			if list.IsOrdered() {
 				blockType = "numbered_list_item"
 			}
-			
+
 			block := map[string]interface{}{
 				"type": blockType,
 				blockType: map[string]interface{}{
@@ -309,17 +309,17 @@ func (c *converter) convertListToBlocks(list *ast.List, source []byte) []map[str
 			blocks = append(blocks, block)
 		}
 	}
-	
+
 	return blocks
 }
 
 func extractPlainTextFromRichText(richTexts []notion.RichText) string {
 	var text strings.Builder
-	
+
 	for _, rt := range richTexts {
 		text.WriteString(rt.PlainText)
 	}
-	
+
 	return text.String()
 }
 
@@ -330,25 +330,25 @@ func extractLanguageFromCodeBlock(codeBlock *ast.CodeBlock, source []byte) strin
 
 func extractCodeBlockContent(codeBlock *ast.CodeBlock, source []byte) string {
 	var buf strings.Builder
-	
+
 	// For code blocks, iterate through lines
 	for i := 0; i < codeBlock.Lines().Len(); i++ {
 		line := codeBlock.Lines().At(i)
 		buf.Write(line.Value(source))
 	}
-	
+
 	return strings.TrimRight(buf.String(), "\n")
 }
 
 func extractFencedCodeBlockContent(fencedCodeBlock *ast.FencedCodeBlock, source []byte) string {
 	var buf strings.Builder
-	
+
 	// For fenced code blocks, iterate through lines
 	for i := 0; i < fencedCodeBlock.Lines().Len(); i++ {
 		line := fencedCodeBlock.Lines().At(i)
 		buf.Write(line.Value(source))
 	}
-	
+
 	return strings.TrimRight(buf.String(), "\n")
 }
 

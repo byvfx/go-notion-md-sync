@@ -14,20 +14,20 @@ import (
 // findMarkdownFiles recursively finds all markdown files in a directory
 func findMarkdownFiles(dir string) ([]string, error) {
 	var files []string
-	
+
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		
-		if !info.IsDir() && (strings.HasSuffix(strings.ToLower(path), ".md") || 
+
+		if !info.IsDir() && (strings.HasSuffix(strings.ToLower(path), ".md") ||
 			strings.HasSuffix(strings.ToLower(path), ".markdown")) {
 			files = append(files, path)
 		}
-		
+
 		return nil
 	})
-	
+
 	return files, err
 }
 
@@ -45,14 +45,14 @@ func performDirectorySync(ctx context.Context, engine sync.Engine, workingDir, d
 	}
 
 	fmt.Printf("Found %d markdown files in %s\n", len(files), workingDir)
-	
+
 	successCount := 0
 	failureCount := 0
 	skippedCount := 0
 
 	for _, file := range files {
 		printVerbose("Processing: %s", file)
-		
+
 		switch direction {
 		case "push":
 			if err := engine.SyncFileToNotion(ctx, file); err != nil {
@@ -87,9 +87,9 @@ func performDirectorySync(ctx context.Context, engine sync.Engine, workingDir, d
 		}
 	}
 
-	fmt.Printf("\n📊 Sync completed: %d succeeded, %d failed, %d skipped\n", 
+	fmt.Printf("\n📊 Sync completed: %d succeeded, %d failed, %d skipped\n",
 		successCount, failureCount, skippedCount)
-	
+
 	return nil
 }
 
@@ -104,16 +104,16 @@ func syncSingleFileHelper(ctx context.Context, engine sync.Engine, filePath, dir
 		if err != nil {
 			return fmt.Errorf("failed to parse file for pull: %w", err)
 		}
-		
+
 		frontmatter, err := markdown.ExtractFrontmatter(doc.Metadata)
 		if err != nil {
 			return fmt.Errorf("failed to extract frontmatter: %w", err)
 		}
-		
+
 		if frontmatter.NotionID == "" {
 			return fmt.Errorf("no notion_id found in frontmatter - cannot pull without page ID")
 		}
-		
+
 		return engine.SyncNotionToFile(ctx, frontmatter.NotionID, filePath)
 	case "bidirectional":
 		return fmt.Errorf("bidirectional sync not supported for single file")

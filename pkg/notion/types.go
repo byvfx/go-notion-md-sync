@@ -24,22 +24,22 @@ type Parent struct {
 }
 
 type Block struct {
-	ID          string                 `json:"id,omitempty"`
-	Object      string                 `json:"object,omitempty"`
-	Type        string                 `json:"type"`
-	CreatedTime time.Time              `json:"created_time,omitempty"`
-	HasChildren bool                   `json:"has_children,omitempty"`
-	
+	ID          string    `json:"id,omitempty"`
+	Object      string    `json:"object,omitempty"`
+	Type        string    `json:"type"`
+	CreatedTime time.Time `json:"created_time,omitempty"`
+	HasChildren bool      `json:"has_children,omitempty"`
+
 	// Block type specific content - these are mutually exclusive based on Type
-	Paragraph         *RichTextBlock `json:"paragraph,omitempty"`
-	Heading1          *RichTextBlock `json:"heading_1,omitempty"`
-	Heading2          *RichTextBlock `json:"heading_2,omitempty"`
-	Heading3          *RichTextBlock `json:"heading_3,omitempty"`
-	BulletedListItem  *RichTextBlock `json:"bulleted_list_item,omitempty"`
-	NumberedListItem  *RichTextBlock `json:"numbered_list_item,omitempty"`
-	Code              *CodeBlock     `json:"code,omitempty"`
-	Quote             *RichTextBlock `json:"quote,omitempty"`
-	
+	Paragraph        *RichTextBlock `json:"paragraph,omitempty"`
+	Heading1         *RichTextBlock `json:"heading_1,omitempty"`
+	Heading2         *RichTextBlock `json:"heading_2,omitempty"`
+	Heading3         *RichTextBlock `json:"heading_3,omitempty"`
+	BulletedListItem *RichTextBlock `json:"bulleted_list_item,omitempty"`
+	NumberedListItem *RichTextBlock `json:"numbered_list_item,omitempty"`
+	Code             *CodeBlock     `json:"code,omitempty"`
+	Quote            *RichTextBlock `json:"quote,omitempty"`
+
 	// For unknown block types, keep the raw content
 	Content map[string]interface{} `json:",inline"`
 }

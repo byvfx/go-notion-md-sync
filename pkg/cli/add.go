@@ -41,7 +41,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 
 	// Collect all files to add
 	var filesToAdd []string
-	
+
 	for _, arg := range args {
 		if arg == "." {
 			// Add all changed files

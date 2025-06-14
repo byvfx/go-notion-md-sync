@@ -36,10 +36,10 @@ mapping:
 	// Clear environment to ensure clean test
 	originalToken := os.Getenv("NOTION_MD_SYNC_NOTION_TOKEN")
 	originalPageID := os.Getenv("NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID")
-	
+
 	os.Unsetenv("NOTION_MD_SYNC_NOTION_TOKEN")
 	os.Unsetenv("NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID")
-	
+
 	defer func() {
 		if originalToken != "" {
 			os.Setenv("NOTION_MD_SYNC_NOTION_TOKEN", originalToken)

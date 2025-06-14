@@ -75,12 +75,12 @@ func (e *engine) SyncFileToNotion(ctx context.Context, filePath string) error {
 		if err != nil {
 			return err
 		}
-		
+
 		// Update frontmatter with new page ID
 		frontmatter.NotionID = pageID
 		frontmatter.UpdatedAt = &time.Time{}
 		*frontmatter.UpdatedAt = time.Now()
-		
+
 		// Write back to file
 		return e.parser.CreateMarkdownWithFrontmatter(
 			filePath,
@@ -170,7 +170,7 @@ func (e *engine) syncAllNotionToMarkdown(ctx context.Context) error {
 	for _, page := range pages {
 		title := e.extractTitleFromPage(&page)
 		filePath := filepath.Join(e.config.Directories.MarkdownRoot, title+".md")
-		
+
 		if err := e.SyncNotionToFile(ctx, page.ID, filePath); err != nil {
 			return fmt.Errorf("failed to sync page %s: %w", page.ID, err)
 		}
@@ -194,7 +194,7 @@ func (e *engine) syncBidirectional(ctx context.Context) error {
 	for _, page := range pages {
 		title := e.extractTitleFromPage(&page)
 		filePath := filepath.Join(e.config.Directories.MarkdownRoot, title+".md")
-		
+
 		// Check if file exists
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {
 			if err := e.SyncNotionToFile(ctx, page.ID, filePath); err != nil {
