@@ -1,6 +1,6 @@
 module github.com/byvfx/go-notion-md-sync
 
-go 1.24.0
+go 1.23
 
 require (
 	github.com/fsnotify/fsnotify v1.7.0
