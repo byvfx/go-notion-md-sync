@@ -6,6 +6,132 @@ updated_at: "2025-06-13T23:01:34-07:00"
 
 # Release Notes
 
+## v0.6.0 - Interactive Conflict Resolution
+
+### 🎯 Major Feature: Interactive Conflict Resolution with Diff Display
+
+This release introduces a comprehensive conflict resolution system that brings professional-grade merge handling to notion-md-sync, making bidirectional synchronization safer and more intuitive.
+
+#### 🔄 New Conflict Resolution Features
+
+**Interactive Diff Display:**
+```bash
+# When conflicts are detected during bidirectional sync:
+Conflict detected in docs/important.md
+--- Local (Markdown)
++++ Remote (Notion)
+@@ -1,5 +1,5 @@
+ # Important Document
+ 
+-This is the local version with my changes
++This is the Notion version with team updates
+ 
+ Some shared content here...
+
+Choose resolution: [l]ocal, [r]emote, or [s]kip? 
+```
+
+**Multiple Resolution Strategies:**
+```yaml
+# In config.yaml
+sync:
+  conflict_resolution: diff  # Options: diff, newer, notion_wins, markdown_wins
+```
+
+#### 🎨 Resolution Strategies Explained
+
+1. **`diff` (Default)**: Shows unified diff and prompts for user choice
+   - Color-coded output: additions in green (+), deletions in red (-)
+   - Clear visual representation of differences
+   - Interactive prompts with intuitive options
+
+2. **`notion_wins`**: Automatically uses Notion version for all conflicts
+   - Best for teams where Notion is the source of truth
+   - No prompts, fully automated resolution
+
+3. **`markdown_wins`**: Automatically uses local markdown version
+   - Ideal for individual workflows where local edits take priority
+   - Preserves all local changes without prompts
+
+4. **`newer`**: Uses timestamp comparison (falls back to diff if equal)
+   - Smart timestamp-based resolution
+   - Handles edge cases gracefully
+
+#### 🛡️ Safety Features
+
+- **Non-Destructive**: Original content preserved until resolution confirmed
+- **Skip Option**: Ability to skip individual conflicts and handle manually
+- **Clear Context**: Shows exact differences before any changes
+- **Atomic Operations**: Each conflict resolved independently
+
+#### 📊 Technical Implementation
+
+- **Unified Diff Algorithm**: Uses `github.com/sergi/go-diff` for accurate diffs
+- **Smart Detection**: Only triggers on actual content differences
+- **Performance**: Efficient diff computation even for large documents
+- **Cross-Platform**: Works identically on Windows, macOS, and Linux
+
+#### 💻 Usage Examples
+
+**Basic bidirectional sync with conflicts:**
+```bash
+# Run bidirectional sync
+notion-md-sync sync --verbose
+
+# When conflict detected:
+# 1. Review the diff showing exact changes
+# 2. Choose [l]ocal, [r]emote, or [s]kip
+# 3. Continue with remaining files
+```
+
+**Configure automatic resolution:**
+```bash
+# Always prefer Notion version
+notion-md-sync sync --conflict-resolution notion_wins
+
+# Always prefer local markdown
+notion-md-sync sync --conflict-resolution markdown_wins
+```
+
+**Set default strategy in config:**
+```yaml
+sync:
+  direction: bidirectional
+  conflict_resolution: diff  # Your preferred default
+```
+
+#### 🎯 When Conflicts Occur
+
+Conflicts are detected when:
+- Local markdown has been edited since last sync
+- Notion page has been modified by another user/device
+- Bidirectional sync attempts to reconcile both changes
+
+The system automatically:
+1. Detects content differences during sync
+2. Generates a unified diff for review
+3. Presents clear resolution options
+4. Applies chosen resolution and continues
+
+#### 🚀 Workflow Benefits
+
+- **Team Collaboration**: Safe bidirectional sync for shared documents
+- **Multi-Device**: Work across devices without fear of overwrites
+- **Transparency**: See exactly what changed before deciding
+- **Flexibility**: Choose resolution strategy per-project needs
+- **Efficiency**: Batch operations with per-file conflict handling
+
+#### ⚡ Performance Impact
+
+- **Minimal Overhead**: Diff generation only when needed
+- **Fast Comparison**: Optimized content comparison algorithms
+- **Memory Efficient**: Streaming diff generation for large files
+- **Concurrent Processing**: Other files continue syncing during prompts
+
+This release makes notion-md-sync suitable for complex team workflows and multi-device scenarios where conflict resolution is critical. The interactive diff display ensures you never lose important changes while maintaining full control over the resolution process.
+
+---
+
 ## v0.5.0 - Git-like Staging Workflow & Major Improvements
 
 ### 🚀 Major Features: Git-like Staging + Critical Fixes + Performance Boost
