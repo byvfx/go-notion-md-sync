@@ -47,8 +47,8 @@ func Load(configPath string) (*Config, error) {
 	v.AutomaticEnv()
 
 	// Bind specific environment variables for nested config
-	v.BindEnv("notion.token", "NOTION_MD_SYNC_NOTION_TOKEN")
-	v.BindEnv("notion.parent_page_id", "NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID")
+	_ = v.BindEnv("notion.token", "NOTION_MD_SYNC_NOTION_TOKEN")
+	_ = v.BindEnv("notion.parent_page_id", "NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID")
 
 	// Config file
 	if configPath != "" {

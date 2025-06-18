@@ -155,7 +155,7 @@ func (c *converter) BlocksToMarkdown(blocks []notion.Block) (string, error) {
 func extractTextFromNode(node ast.Node, source []byte) string {
 	var buf strings.Builder
 
-	ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+	_ = ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if entering {
 			switch n.Kind() {
 			case ast.KindText:

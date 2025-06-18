@@ -336,7 +336,7 @@ func (s *StagingArea) getFileStatus(relPath string, info os.FileInfo, index map[
 	// Hash matches, update timestamp in index to avoid future hash calculations
 	entry.LastModified = info.ModTime()
 	index[relPath] = entry
-	s.saveIndex(index) // Async update, ignore errors
+	_ = s.saveIndex(index) // Async update, ignore errors
 
 	return StatusUnmodified, nil
 }

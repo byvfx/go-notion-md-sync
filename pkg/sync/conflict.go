@@ -54,7 +54,7 @@ func (cr *ConflictResolver) resolveByDiff(localContent, remoteContent, filePath 
 
 	fmt.Printf("\n🔄 Conflict detected for: %s\n", filePath)
 	fmt.Println("=" + strings.Repeat("=", 60) + "=")
-	
+
 	// Show diff
 	if err := cr.showDiff(localContent, remoteContent); err != nil {
 		return "", fmt.Errorf("failed to show diff: %w", err)
@@ -94,7 +94,7 @@ func (cr *ConflictResolver) resolveByDiff(localContent, remoteContent, filePath 
 func (cr *ConflictResolver) showDiff(localContent, remoteContent string) error {
 	dmp := diffmatchpatch.New()
 	diffs := dmp.DiffMain(localContent, remoteContent, false)
-	
+
 	// Clean up for better readability
 	diffs = dmp.DiffCleanupSemantic(diffs)
 

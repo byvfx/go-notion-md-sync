@@ -66,7 +66,7 @@ func (p *markdownParser) ParseFile(filePath string) (*Document, error) {
 
 	// Get raw content without frontmatter for processing
 	rawContent := string(content)
-	if metaData != nil && len(metaData) > 0 {
+	if len(metaData) > 0 {
 		// Remove frontmatter from raw content
 		lines := bytes.Split(content, []byte("\n"))
 		if len(lines) > 0 && bytes.Equal(lines[0], []byte("---")) {
@@ -130,7 +130,7 @@ func (p *markdownParser) CreateMarkdownWithFrontmatter(filePath string, metadata
 func ExtractTextFromAST(node ast.Node, source []byte) string {
 	var buf bytes.Buffer
 
-	ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+	_ = ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if entering {
 			switch n.Kind() {
 			case ast.KindText:

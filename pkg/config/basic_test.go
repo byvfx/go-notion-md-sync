@@ -57,7 +57,7 @@ mapping:
 
 	// Verify basic config loading works
 	if cfg == nil {
-		t.Error("Expected non-nil config")
+		t.Fatal("Expected non-nil config")
 	}
 
 	if cfg.Sync.Direction != "push" {
