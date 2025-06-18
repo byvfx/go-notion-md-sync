@@ -72,19 +72,25 @@ func runPull(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("--output flag is required when pulling a specific page")
 		}
 
+		fmt.Printf("Pulling page from Notion...\n")
+		fmt.Printf("  Page ID: %s\n", pullPageID)
+		fmt.Printf("  Output: %s\n", pullOutput)
 		printVerbose("Pulling page: %s to %s", pullPageID, pullOutput)
+		
 		if err := engine.SyncNotionToFile(ctx, pullPageID, pullOutput); err != nil {
 			return fmt.Errorf("failed to pull page: %w", err)
 		}
 
-		fmt.Printf("✓ Successfully pulled page to %s\n", pullOutput)
+		fmt.Printf("\n✓ Successfully pulled page to %s\n", pullOutput)
 	} else {
+		fmt.Printf("Pulling all pages from Notion parent page: %s\n", cfg.Notion.ParentPageID)
 		printVerbose("Pulling all pages from parent: %s", cfg.Notion.ParentPageID)
+		
 		if err := engine.SyncAll(ctx, "pull"); err != nil {
 			return fmt.Errorf("pull failed: %w", err)
 		}
 
-		fmt.Println("✓ Pull completed successfully")
+		fmt.Println("\n✓ Pull completed successfully")
 	}
 
 	return nil

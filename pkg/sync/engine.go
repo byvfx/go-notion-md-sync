@@ -101,6 +101,10 @@ func (e *engine) SyncNotionToFile(ctx context.Context, pageID, filePath string) 
 		return fmt.Errorf("failed to get Notion page: %w", err)
 	}
 
+	// Extract and display page title
+	title := e.extractTitleFromPage(page)
+	fmt.Printf("  Page title: %s\n", title)
+
 	// Get page blocks
 	blocks, err := e.notion.GetPageBlocks(ctx, pageID)
 	if err != nil {
@@ -115,7 +119,7 @@ func (e *engine) SyncNotionToFile(ctx context.Context, pageID, filePath string) 
 
 	// Create frontmatter
 	frontmatter := &markdown.FrontmatterFields{
-		Title:       e.extractTitleFromPage(page),
+		Title:       title,
 		NotionID:    pageID,
 		CreatedAt:   &page.CreatedTime,
 		UpdatedAt:   &time.Time{},
@@ -169,13 +173,22 @@ func (e *engine) syncAllNotionToMarkdown(ctx context.Context) error {
 		return fmt.Errorf("failed to get child pages: %w", err)
 	}
 
-	for _, page := range pages {
+	fmt.Printf("Found %d pages under parent %s\n", len(pages), e.config.Notion.ParentPageID)
+	fmt.Println()
+
+	for i, page := range pages {
 		title := e.extractTitleFromPage(&page)
 		filePath := filepath.Join(e.config.Directories.MarkdownRoot, title+".md")
+
+		fmt.Printf("[%d/%d] Pulling page: %s\n", i+1, len(pages), title)
+		fmt.Printf("  Notion ID: %s\n", page.ID)
+		fmt.Printf("  Saving to: %s\n", filePath)
 
 		if err := e.SyncNotionToFile(ctx, page.ID, filePath); err != nil {
 			return fmt.Errorf("failed to sync page %s: %w", page.ID, err)
 		}
+
+		fmt.Printf("  ✓ Successfully pulled\n\n")
 	}
 
 	return nil
