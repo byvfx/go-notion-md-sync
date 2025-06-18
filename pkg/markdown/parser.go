@@ -150,7 +150,7 @@ func ExtractTextFromAST(node ast.Node, source []byte) string {
 func GetHeadings(node ast.Node, source []byte) []Heading {
 	var headings []Heading
 
-	ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+	_ = ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if entering && n.Kind() == ast.KindHeading {
 			heading := n.(*ast.Heading)
 			text := ExtractTextFromAST(heading, source)
