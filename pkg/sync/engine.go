@@ -20,18 +20,20 @@ type Engine interface {
 }
 
 type engine struct {
-	config    *config.Config
-	notion    notion.Client
-	parser    markdown.Parser
-	converter Converter
+	config           *config.Config
+	notion           notion.Client
+	parser           markdown.Parser
+	converter        Converter
+	conflictResolver *ConflictResolver
 }
 
 func NewEngine(cfg *config.Config) Engine {
 	return &engine{
-		config:    cfg,
-		notion:    notion.NewClient(cfg.Notion.Token),
-		parser:    markdown.NewParser(),
-		converter: NewConverter(),
+		config:           cfg,
+		notion:           notion.NewClient(cfg.Notion.Token),
+		parser:           markdown.NewParser(),
+		converter:        NewConverter(),
+		conflictResolver: NewConflictResolver(cfg.Sync.ConflictResolution),
 	}
 }
 
@@ -180,17 +182,29 @@ func (e *engine) syncAllNotionToMarkdown(ctx context.Context) error {
 }
 
 func (e *engine) syncBidirectional(ctx context.Context) error {
-	// First, sync all markdown files to Notion
-	if err := e.syncAllMarkdownToNotion(ctx); err != nil {
-		return fmt.Errorf("failed to sync markdown to Notion: %w", err)
-	}
-
-	// Then, sync any Notion pages that don't have corresponding markdown files
+	// Get all child pages from Notion
 	pages, err := e.notion.GetChildPages(ctx, e.config.Notion.ParentPageID)
 	if err != nil {
 		return fmt.Errorf("failed to get child pages: %w", err)
 	}
 
+	// Check each file for conflicts
+	err = filepath.Walk(e.config.Directories.MarkdownRoot, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !strings.HasSuffix(path, ".md") || e.isExcluded(path) {
+			return nil
+		}
+
+		return e.syncFileWithConflictDetection(ctx, path, pages)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to sync markdown files: %w", err)
+	}
+
+	// Sync any Notion pages that don't have corresponding markdown files
 	for _, page := range pages {
 		title := e.extractTitleFromPage(&page)
 		filePath := filepath.Join(e.config.Directories.MarkdownRoot, title+".md")
@@ -204,6 +218,78 @@ func (e *engine) syncBidirectional(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (e *engine) syncFileWithConflictDetection(ctx context.Context, filePath string, notionPages []notion.Page) error {
+	// Parse local markdown file
+	doc, err := e.parser.ParseFile(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to parse markdown file: %w", err)
+	}
+
+	// Extract frontmatter
+	frontmatter, err := markdown.ExtractFrontmatter(doc.Metadata)
+	if err != nil {
+		return fmt.Errorf("failed to extract frontmatter: %w", err)
+	}
+
+	// Skip if sync is disabled
+	if !frontmatter.SyncEnabled {
+		return nil
+	}
+
+	// If no NotionID, push to Notion (new file)
+	if frontmatter.NotionID == "" {
+		return e.SyncFileToNotion(ctx, filePath)
+	}
+
+	// Find corresponding Notion page
+	var notionPage *notion.Page
+	for _, page := range notionPages {
+		if page.ID == frontmatter.NotionID {
+			notionPage = &page
+			break
+		}
+	}
+
+	if notionPage == nil {
+		// Page doesn't exist in Notion anymore, create new one
+		return e.SyncFileToNotion(ctx, filePath)
+	}
+
+	// Get remote content from Notion
+	blocks, err := e.notion.GetPageBlocks(ctx, frontmatter.NotionID)
+	if err != nil {
+		return fmt.Errorf("failed to get page blocks: %w", err)
+	}
+
+	remoteContent, err := e.converter.BlocksToMarkdown(blocks)
+	if err != nil {
+		return fmt.Errorf("failed to convert blocks to markdown: %w", err)
+	}
+
+	// Check for conflicts
+	if HasConflict(doc.Content, remoteContent) {
+		// Resolve conflict
+		resolvedContent, err := e.conflictResolver.ResolveConflict(doc.Content, remoteContent, filePath)
+		if err != nil {
+			// User chose to skip or there was an error
+			fmt.Printf("Skipping file %s: %v\n", filePath, err)
+			return nil
+		}
+
+		// Determine which direction to sync based on resolved content
+		if resolvedContent == doc.Content {
+			// Local version chosen, push to Notion
+			return e.SyncFileToNotion(ctx, filePath)
+		} else {
+			// Remote version chosen, pull from Notion
+			return e.SyncNotionToFile(ctx, frontmatter.NotionID, filePath)
+		}
+	} else {
+		// No conflict, sync normally (push local to Notion)
+		return e.SyncFileToNotion(ctx, filePath)
+	}
 }
 
 // Helper functions

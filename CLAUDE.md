@@ -36,10 +36,15 @@ notion-md-sync/
 │   │   ├── parser.go
 │   │   ├── parser_test.go
 │   │   └── frontmatter.go
-│   ├── sync/                     # Core sync logic
+│   ├── sync/                     # Core sync logic & conflict resolution
 │   │   ├── engine.go
 │   │   ├── engine_test.go
-│   │   └── converter.go
+│   │   ├── converter.go
+│   │   ├── conflict.go           # Conflict resolution with diff display
+│   │   └── conflict_test.go
+│   ├── staging/                  # Git-like staging area
+│   │   ├── staging.go
+│   │   └── staging_test.go
 │   ├── watcher/                  # File system monitoring
 │   │   ├── watcher.go
 │   │   └── watcher_test.go
@@ -47,6 +52,10 @@ notion-md-sync/
 │       ├── root.go
 │       ├── sync.go
 │       ├── pull.go
+│       ├── push.go
+│       ├── add.go               # Git-like staging commands
+│       ├── reset.go
+│       ├── status.go
 │       └── watch.go
 ├── internal/                     # Private application code
 │   └── util/                     # Internal utilities
@@ -72,6 +81,7 @@ require (
     github.com/yuin/goldmark v1.6.0
     github.com/yuin/goldmark-meta v1.1.0
     github.com/stretchr/testify v1.8.4
+    github.com/sergi/go-diff v1.4.0  # For conflict resolution diff display
 )
 ```
 
@@ -98,6 +108,9 @@ require (
 ### Testing
 - **testify**: Assertions and mocking framework
 
+### Conflict Resolution
+- **go-diff**: Unified diff generation for interactive conflict resolution
+
 ## Core Types and Interfaces
 
 ```go
@@ -109,8 +122,8 @@ type Config struct {
     } `yaml:"notion"`
     
     Sync struct {
-        Direction           string `yaml:"direction"`
-        ConflictResolution  string `yaml:"conflict_resolution"`
+        Direction           string `yaml:"direction"`           # push, pull, bidirectional
+        ConflictResolution  string `yaml:"conflict_resolution"` # diff, newer, notion_wins, markdown_wins
     } `yaml:"sync"`
     
     Directories struct {
@@ -168,6 +181,15 @@ type Engine interface {
     SyncNotionToFile(ctx context.Context, pageID, filePath string) error
     SyncAll(ctx context.Context, direction string) error
 }
+
+// pkg/sync/conflict.go
+type ConflictResolver struct {
+    strategy string  # diff, newer, notion_wins, markdown_wins
+}
+
+func (cr *ConflictResolver) ResolveConflict(localContent, remoteContent, filePath string) (string, error)
+func (cr *ConflictResolver) showDiff(localContent, remoteContent string) error
+func HasConflict(localContent, remoteContent string) bool
 ```
 
 ## Implementation Strategy
@@ -475,4 +497,73 @@ dev-setup:
 8. Add CI/CD pipeline
 9. Create installation scripts and documentation
 
-This Go implementation will provide better performance, easier deployment, and type safety while maintaining the same functionality as the Python version.
+## Key Features Implemented
+
+### 1. Conflict Resolution System
+- **Interactive Diff Display**: Shows unified diff with `+`/`-` indicators
+- **Multiple Resolution Strategies**:
+  - `diff` (default): Interactive user choice with diff display
+  - `notion_wins`: Always choose remote Notion version
+  - `markdown_wins`: Always choose local markdown version  
+  - `newer`: Choose based on timestamp (fallback to diff)
+- **User-Friendly Prompts**: `[l]ocal`, `[r]emote`, or `[s]kip` options
+- **Automatic Detection**: Runs during bidirectional sync when content differs
+
+```go
+// Example conflict resolution usage
+resolver := sync.NewConflictResolver("diff")
+resolved, err := resolver.ResolveConflict(localContent, remoteContent, "file.md")
+```
+
+### 2. Git-Like Staging Workflow
+- **Staging Area**: Track files for sync operations
+- **Status Command**: Show modified, staged, and synced files
+- **Add/Reset Commands**: Control which files to sync
+- **Persistence**: Staging state survives across sessions
+
+```bash
+# Git-like workflow
+./notion-md-sync status
+./notion-md-sync add file1.md file2.md
+./notion-md-sync push  # Only pushes staged files
+```
+
+### 3. CI/CD Optimization
+- **Efficient Builds**: Separate test/build jobs prevent redundant testing
+- **Smart Triggers**: Skip builds for documentation-only changes
+- **Platform Matrix**: Builds for Linux, Windows, macOS (Intel + Apple Silicon)
+- **Concurrency Control**: Cancel old workflows when new commits arrive
+
+### 4. Configuration Management
+- **YAML + Environment Variables**: Flexible configuration options
+- **Path Filtering**: Exclude patterns for sync operations
+- **Multiple Strategies**: Filename or frontmatter-based mapping
+
+### 5. Comprehensive Testing
+- **Table-Driven Tests**: Consistent test patterns across packages
+- **Conflict Resolution Tests**: Mock user input scenarios
+- **Integration Tests**: End-to-end workflow validation
+- **CI/CD Testing**: Automated linting and testing on all platforms
+
+## Advanced Implementation Notes
+
+### Conflict Resolution Flow
+1. **Detection**: Compare local and remote content during bidirectional sync
+2. **Analysis**: Generate unified diff showing exact changes
+3. **User Interaction**: Present clear options with context
+4. **Resolution**: Apply user choice and continue sync
+5. **Error Handling**: Graceful fallback for edge cases
+
+### Staging Implementation
+- **File Tracking**: JSON-based staging area with modification timestamps
+- **Status Detection**: Compare file content with last known sync state
+- **Atomic Operations**: Ensure staging consistency across operations
+- **Cross-Platform**: Works identically on all supported platforms
+
+### Performance Optimizations
+- **Caching**: Go module and build artifact caching in CI/CD
+- **Minimal Builds**: Only necessary platforms for PRs vs full releases
+- **Binary Size**: Optimized builds with `-ldflags="-s -w"`
+- **Memory Usage**: Efficient diff algorithms and streaming where possible
+
+This Go implementation provides better performance, easier deployment, type safety, and robust conflict resolution while maintaining intuitive Git-like workflows.

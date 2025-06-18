@@ -38,7 +38,7 @@ func Load(configPath string) (*Config, error) {
 
 	// Set defaults
 	v.SetDefault("sync.direction", "push")
-	v.SetDefault("sync.conflict_resolution", "newer")
+	v.SetDefault("sync.conflict_resolution", "diff")
 	v.SetDefault("directories.markdown_root", "./")
 	v.SetDefault("mapping.strategy", "filename")
 

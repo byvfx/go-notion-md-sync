@@ -216,8 +216,8 @@ func TestConfigDefaults(t *testing.T) {
 		t.Errorf("Expected default direction 'push', got '%s'", cfg.Sync.Direction)
 	}
 
-	if cfg.Sync.ConflictResolution != "newer" {
-		t.Errorf("Expected default conflict_resolution 'newer', got '%s'", cfg.Sync.ConflictResolution)
+	if cfg.Sync.ConflictResolution != "diff" {
+		t.Errorf("Expected default conflict_resolution 'diff', got '%s'", cfg.Sync.ConflictResolution)
 	}
 
 	if cfg.Directories.MarkdownRoot != "./" {
