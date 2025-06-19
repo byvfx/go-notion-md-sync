@@ -73,7 +73,7 @@ if (Test-Path $binaryPath) {
     Write-Host "🎯 Next steps:"
     Write-Host "   1. Restart your terminal or run: refreshenv"
     Write-Host "   2. Create a project: notion-md-sync init"
-    Write-Host "   3. Start syncing: notion-md-sync watch"
+    Write-Host "   3. Pull down your notion page: notion-md-sync pull"
     Write-Host ""
     Write-Host "📚 For help, run: notion-md-sync --help"
 } else {
