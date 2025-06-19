@@ -52,7 +52,7 @@ cd go-notion-md-sync
 make build
 ```
 
-📖 **Detailed installation guide**: [INSTALLATION.md](INSTALLATION.md)
+📖 **Detailed installation guide**: [INSTALLATION.md](docs/guides/INSTALLATION.md)
 
 ### 2. Setup Notion Integration
 
@@ -516,7 +516,7 @@ make dev-setup      # Install development tools
 
 - **Never commit** `.env` files or config files with tokens
 - Use environment variables for all sensitive data
-- See [SECURITY.md](SECURITY.md) for detailed security guidelines
+- See [SECURITY.md](docs/guides/SECURITY.md) for detailed security guidelines
 
 ## License
 
