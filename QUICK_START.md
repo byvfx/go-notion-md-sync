@@ -24,17 +24,29 @@ NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID=your_page_id_here
 ### 4. Build & Test
 ```bash
 make build
+
+# Verify your configuration is ready
+./scripts/run-with-env.sh verify
+
+# Test pulling from Notion
 ./scripts/run-with-env.sh pull --verbose
 ```
 
 ## 📖 Common Commands
 
 ```bash
+# Verify configuration is ready
+./scripts/run-with-env.sh verify
+
+# Check file status (modified, staged, etc.)
+./scripts/run-with-env.sh status
+
 # Pull all pages from Notion
 ./scripts/run-with-env.sh pull --verbose
 
-# Push a file to Notion
-./scripts/run-with-env.sh push docs/my-file.md --verbose
+# Stage and push files to Notion
+./scripts/run-with-env.sh add docs/my-file.md
+./scripts/run-with-env.sh push --verbose
 
 # Start auto-sync (watches for file changes)
 ./scripts/run-with-env.sh watch --verbose

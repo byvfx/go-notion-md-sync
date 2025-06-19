@@ -137,7 +137,7 @@ notion:
 
 sync:
   direction: push
-  conflict_resolution: newer
+  conflict_resolution: diff  # diff (interactive), newer, notion_wins, markdown_wins
 
 directories:
   markdown_root: ./docs
@@ -173,7 +173,13 @@ Test your installation:
 # Check version
 notion-md-sync --version
 
-# Test configuration
+# Verify configuration is ready
+notion-md-sync verify
+
+# Check status of files
+notion-md-sync status
+
+# Test configuration with dry run
 notion-md-sync push --dry-run --verbose
 
 # Push your first file
@@ -225,9 +231,11 @@ sudo rm /usr/local/bin/notion-md-sync
 
 Once installed and configured:
 
-1. **Push files**: `notion-md-sync push --verbose`
-2. **Pull from Notion**: `notion-md-sync pull --verbose`
-3. **Watch for changes**: `notion-md-sync watch --verbose`
-4. **Get help**: `notion-md-sync --help`
+1. **Verify setup**: `notion-md-sync verify`
+2. **Check status**: `notion-md-sync status`
+3. **Push files**: `notion-md-sync push --verbose`
+4. **Pull from Notion**: `notion-md-sync pull --verbose`
+5. **Watch for changes**: `notion-md-sync watch --verbose`
+6. **Get help**: `notion-md-sync --help`
 
 For detailed usage examples, see the [README.md](README.md).

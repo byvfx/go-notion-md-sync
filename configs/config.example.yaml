@@ -4,7 +4,7 @@ notion:
 
 sync:
   direction: "push"  # push, pull, or bidirectional
-  conflict_resolution: "newer"  # newer, notion_wins, markdown_wins
+  conflict_resolution: "diff"  # diff (interactive), newer, notion_wins, markdown_wins
 
 directories:
   markdown_root: "./"

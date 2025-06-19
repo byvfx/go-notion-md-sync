@@ -20,6 +20,9 @@ A powerful CLI tool for synchronizing markdown files with Notion pages. Built wi
 - 🚀 **High Performance**: Concurrent processing with optimized block operations
 - 🧪 **Comprehensive Testing**: Full test coverage with CI/CD validation
 - ⚡ **Fast & Reliable**: Built with Go for performance and reliability
+- ✅ **Configuration Verification**: Check your setup is ready with `verify` command
+- 📊 **Enhanced Pull Information**: See page titles and progress when pulling from Notion
+- 🏷️ **Parent Page Context**: Status command shows current Notion parent page title
 
 ## Quick Start
 
@@ -119,6 +122,9 @@ sync:
 The tool now includes a Git-like staging system for better control over which files to sync:
 
 ```bash
+# Verify configuration is ready
+notion-md-sync verify
+
 # Check status of all markdown files
 notion-md-sync status
 
@@ -145,14 +151,44 @@ The staging system provides:
 - **Smart change detection** using timestamps and content hashes
 - **Selective syncing** - only sync the files you want
 - **Status overview** showing which files are modified, staged, or synced
+- **Parent page context** - status shows current Notion parent page title
 - **Concurrent processing** for faster operations
+
+#### Status Command Output
+```bash
+# Example status output:
+On parent page: My Project Documentation
+
+Changes not staged for sync:
+  (use "notion-md-sync add <file>..." to stage changes)
+
+        modified: docs/api-guide.md
+        modified: docs/user-manual.md
+        deleted:  docs/old-notes.md
+
+Changes staged for sync:
+  (use "notion-md-sync reset <file>..." to unstage)
+
+        staged:   docs/overview.md
+        staged:   docs/quickstart.md
+```
 
 ### Basic Commands
 
 #### Pull Pages from Notion
 ```bash
 # Pull all pages from Notion to markdown files
+# Shows page titles and progress for each page
 ./bin/notion-md-sync pull --verbose
+
+# Example output:
+# Pulling all pages from Notion parent page: 123e4567-e89b-12d3...
+# Found 3 pages under parent 123e4567-e89b-12d3...
+# 
+# [1/3] Pulling page: Project Overview
+#   Notion ID: abc123-def456-789012
+#   Saving to: docs/Project Overview.md
+#   ✓ Successfully pulled
 
 # Pull a specific page
 ./bin/notion-md-sync pull --page-id PAGE_ID --output docs/my-page.md
@@ -354,6 +390,9 @@ ls -la docs/
 ### Example 3: Git-like Staging Workflow
 
 ```bash
+# Verify your configuration is ready
+notion-md-sync verify
+
 # Check which files have changed
 notion-md-sync status
 
@@ -418,6 +457,9 @@ echo "New content" >> docs/my-page.md
 # Validate your setup
 make validate
 
+# Verify configuration is ready
+./bin/notion-md-sync verify
+
 # General help
 ./bin/notion-md-sync --help
 
@@ -426,6 +468,8 @@ make validate
 ./bin/notion-md-sync push --help
 ./bin/notion-md-sync sync --help
 ./bin/notion-md-sync watch --help
+./bin/notion-md-sync status --help
+./bin/notion-md-sync verify --help
 ```
 
 ## Development
