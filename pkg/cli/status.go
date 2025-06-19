@@ -1,10 +1,14 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"sort"
+	"time"
 
+	"github.com/byvfx/go-notion-md-sync/pkg/config"
+	"github.com/byvfx/go-notion-md-sync/pkg/notion"
 	"github.com/byvfx/go-notion-md-sync/pkg/staging"
 	"github.com/spf13/cobra"
 )
@@ -25,6 +29,21 @@ func init() {
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
+	// Load configuration to get parent page info
+	parentPageTitle := "Unknown parent page"
+	cfg, err := config.Load(configPath)
+	if err == nil && cfg.Notion.ParentPageID != "" {
+		// Create Notion client to fetch the page title
+		client := notion.NewClient(cfg.Notion.Token)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		
+		page, err := client.GetPage(ctx, cfg.Notion.ParentPageID)
+		if err == nil {
+			parentPageTitle = extractPageTitle(page)
+		}
+	}
+
 	workingDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get working directory: %w", err)
@@ -67,12 +86,12 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 	// Print status
 	if len(stagedFiles) == 0 && len(modifiedFiles) == 0 && len(newFiles) == 0 && len(deletedFiles) == 0 {
-		fmt.Println("On branch main")
+		fmt.Printf("On parent page: %s\n", parentPageTitle)
 		fmt.Println("nothing to commit, working tree clean")
 		return nil
 	}
 
-	fmt.Println("On branch main")
+	fmt.Printf("On parent page: %s\n", parentPageTitle)
 
 	// Staged changes
 	if len(stagedFiles) > 0 {
@@ -125,4 +144,20 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// extractPageTitle extracts the title from a Notion page
+func extractPageTitle(page *notion.Page) string {
+	if titleProp, ok := page.Properties["title"]; ok {
+		if titleData, ok := titleProp.(map[string]interface{}); ok {
+			if titleList, ok := titleData["title"].([]interface{}); ok && len(titleList) > 0 {
+				if titleItem, ok := titleList[0].(map[string]interface{}); ok {
+					if plainText, ok := titleItem["plain_text"].(string); ok {
+						return plainText
+					}
+				}
+			}
+		}
+	}
+	return "Untitled"
 }
