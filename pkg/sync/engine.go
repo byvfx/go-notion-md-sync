@@ -17,6 +17,7 @@ type Engine interface {
 	SyncFileToNotion(ctx context.Context, filePath string) error
 	SyncNotionToFile(ctx context.Context, pageID, filePath string) error
 	SyncAll(ctx context.Context, direction string) error
+	SyncSpecificFile(ctx context.Context, filename, direction string) error
 }
 
 type engine struct {
@@ -369,4 +370,53 @@ func (e *engine) isExcluded(path string) bool {
 		}
 	}
 	return false
+}
+
+func (e *engine) SyncSpecificFile(ctx context.Context, filename, direction string) error {
+	switch direction {
+	case "pull":
+		return e.syncSpecificNotionToMarkdown(ctx, filename)
+	case "push":
+		return e.SyncFileToNotion(ctx, filename)
+	default:
+		return fmt.Errorf("unsupported direction: %s", direction)
+	}
+}
+
+func (e *engine) syncSpecificNotionToMarkdown(ctx context.Context, filename string) error {
+	// Get all child pages from Notion
+	pages, err := e.notion.GetChildPages(ctx, e.config.Notion.ParentPageID)
+	if err != nil {
+		return fmt.Errorf("failed to get child pages: %w", err)
+	}
+
+	// Find the page that matches the filename
+	var targetPage *notion.Page
+	targetTitle := strings.TrimSuffix(filepath.Base(filename), ".md")
+	
+	for _, page := range pages {
+		pageTitle := e.extractTitleFromPage(&page)
+		if pageTitle == targetTitle {
+			targetPage = &page
+			break
+		}
+	}
+
+	if targetPage == nil {
+		return fmt.Errorf("page with title '%s' not found in Notion", targetTitle)
+	}
+
+	// Create the file path
+	filePath := filepath.Join(e.config.Directories.MarkdownRoot, filename)
+	
+	// Sync this specific page
+	fmt.Printf("Pulling page: %s\n", e.extractTitleFromPage(targetPage))
+	fmt.Printf("  Notion ID: %s\n", targetPage.ID)
+	fmt.Printf("  Saving to: %s\n", filePath)
+	
+	if err := e.SyncNotionToFile(ctx, targetPage.ID, filePath); err != nil {
+		return fmt.Errorf("failed to sync page %s: %w", targetPage.ID, err)
+	}
+
+	return nil
 }

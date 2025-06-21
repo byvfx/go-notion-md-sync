@@ -19,6 +19,7 @@ var pullCmd = &cobra.Command{
 
 var (
 	pullPageID    string
+	pullPage      string
 	pullOutput    string
 	pullDirectory string
 	pullDryRun    bool
@@ -26,6 +27,7 @@ var (
 
 func init() {
 	pullCmd.Flags().StringVar(&pullPageID, "page-id", "", "specific Notion page ID to pull")
+	pullCmd.Flags().StringVar(&pullPage, "page", "", "specific page filename to pull (e.g., 'Table Page.md')")
 	pullCmd.Flags().StringVarP(&pullOutput, "output", "o", "", "output file path (required when using --page-id)")
 	pullCmd.Flags().StringVar(&pullDirectory, "directory", "", "directory to save pulled files (defaults to config's markdown_root)")
 	pullCmd.Flags().BoolVar(&pullDryRun, "dry-run", false, "show what would be pulled without actually pulling")
@@ -59,6 +61,8 @@ func runPull(cmd *cobra.Command, args []string) error {
 				return fmt.Errorf("--output flag is required when pulling a specific page")
 			}
 			fmt.Printf("Would pull page %s to %s\n", pullPageID, pullOutput)
+		} else if pullPage != "" {
+			fmt.Printf("Would pull page %s\n", pullPage)
 		} else {
 			fmt.Printf("Would pull all child pages from parent %s to directory %s\n",
 				cfg.Notion.ParentPageID, outputDir)
@@ -82,6 +86,15 @@ func runPull(cmd *cobra.Command, args []string) error {
 		}
 
 		fmt.Printf("\n✓ Successfully pulled page to %s\n", pullOutput)
+	} else if pullPage != "" {
+		fmt.Printf("Pulling specific page: %s\n", pullPage)
+		printVerbose("Pulling page by filename: %s", pullPage)
+		
+		if err := engine.SyncSpecificFile(ctx, pullPage, "pull"); err != nil {
+			return fmt.Errorf("failed to pull page %s: %w", pullPage, err)
+		}
+
+		fmt.Printf("✓ Successfully pulled %s\n", pullPage)
 	} else {
 		fmt.Printf("Pulling all pages from Notion parent page: %s\n", cfg.Notion.ParentPageID)
 		printVerbose("Pulling all pages from parent: %s", cfg.Notion.ParentPageID)
