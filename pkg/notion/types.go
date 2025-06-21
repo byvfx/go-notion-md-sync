@@ -39,6 +39,8 @@ type Block struct {
 	NumberedListItem *RichTextBlock `json:"numbered_list_item,omitempty"`
 	Code             *CodeBlock     `json:"code,omitempty"`
 	Quote            *RichTextBlock `json:"quote,omitempty"`
+	Table            *TableBlock    `json:"table,omitempty"`
+	TableRow         *TableRowBlock `json:"table_row,omitempty"`
 
 	// For unknown block types, keep the raw content
 	Content map[string]interface{} `json:",inline"`
@@ -100,4 +102,14 @@ type SearchResponse struct {
 
 type BlocksResponse struct {
 	Results []Block `json:"results"`
+}
+
+type TableBlock struct {
+	TableWidth      int  `json:"table_width"`
+	HasColumnHeader bool `json:"has_column_header"`
+	HasRowHeader    bool `json:"has_row_header"`
+}
+
+type TableRowBlock struct {
+	Cells [][]RichText `json:"cells"`
 }

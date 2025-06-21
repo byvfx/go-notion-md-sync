@@ -250,6 +250,204 @@ func TestConverter_MarkdownToBlocks(t *testing.T) {
 			want:     []map[string]interface{}{},
 			wantErr:  false,
 		},
+		{
+			name: "simple table",
+			markdown: `| Header 1 | Header 2 |
+| --- | --- |
+| Cell 1 | Cell 2 |
+| Cell 3 | Cell 4 |`,
+			want: []map[string]interface{}{
+				{
+					"type": "table",
+					"table": map[string]interface{}{
+						"table_width":       2,
+						"has_column_header": true,
+						"has_row_header":    false,
+					},
+				},
+				{
+					"type": "table_row",
+					"table_row": map[string]interface{}{
+						"cells": [][]map[string]interface{}{
+							{
+								{
+									"type": "text",
+									"text": map[string]interface{}{
+										"content": "Header 1",
+									},
+								},
+							},
+							{
+								{
+									"type": "text",
+									"text": map[string]interface{}{
+										"content": "Header 2",
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					"type": "table_row",
+					"table_row": map[string]interface{}{
+						"cells": [][]map[string]interface{}{
+							{
+								{
+									"type": "text",
+									"text": map[string]interface{}{
+										"content": "Cell 1",
+									},
+								},
+							},
+							{
+								{
+									"type": "text",
+									"text": map[string]interface{}{
+										"content": "Cell 2",
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					"type": "table_row",
+					"table_row": map[string]interface{}{
+						"cells": [][]map[string]interface{}{
+							{
+								{
+									"type": "text",
+									"text": map[string]interface{}{
+										"content": "Cell 3",
+									},
+								},
+							},
+							{
+								{
+									"type": "text",
+									"text": map[string]interface{}{
+										"content": "Cell 4",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "table with three columns",
+			markdown: `| Name | Age | City |
+| --- | --- | --- |
+| Alice | 30 | New York |
+| Bob | 25 | London |`,
+			want: []map[string]interface{}{
+				{
+					"type": "table",
+					"table": map[string]interface{}{
+						"table_width":       3,
+						"has_column_header": true,
+						"has_row_header":    false,
+					},
+				},
+				{
+					"type": "table_row",
+					"table_row": map[string]interface{}{
+						"cells": [][]map[string]interface{}{
+							{
+								{
+									"type": "text",
+									"text": map[string]interface{}{
+										"content": "Name",
+									},
+								},
+							},
+							{
+								{
+									"type": "text",
+									"text": map[string]interface{}{
+										"content": "Age",
+									},
+								},
+							},
+							{
+								{
+									"type": "text",
+									"text": map[string]interface{}{
+										"content": "City",
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					"type": "table_row",
+					"table_row": map[string]interface{}{
+						"cells": [][]map[string]interface{}{
+							{
+								{
+									"type": "text",
+									"text": map[string]interface{}{
+										"content": "Alice",
+									},
+								},
+							},
+							{
+								{
+									"type": "text",
+									"text": map[string]interface{}{
+										"content": "30",
+									},
+								},
+							},
+							{
+								{
+									"type": "text",
+									"text": map[string]interface{}{
+										"content": "New York",
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					"type": "table_row",
+					"table_row": map[string]interface{}{
+						"cells": [][]map[string]interface{}{
+							{
+								{
+									"type": "text",
+									"text": map[string]interface{}{
+										"content": "Bob",
+									},
+								},
+							},
+							{
+								{
+									"type": "text",
+									"text": map[string]interface{}{
+										"content": "25",
+									},
+								},
+							},
+							{
+								{
+									"type": "text",
+									"text": map[string]interface{}{
+										"content": "London",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -374,6 +572,39 @@ func TestConverter_BlocksToMarkdown(t *testing.T) {
 			name:    "empty blocks",
 			blocks:  []notion.Block{},
 			want:    "",
+			wantErr: false,
+		},
+		{
+			name: "table blocks",
+			blocks: []notion.Block{
+				{
+					Type: "table",
+					Table: &notion.TableBlock{
+						TableWidth:      2,
+						HasColumnHeader: true,
+						HasRowHeader:    false,
+					},
+				},
+				{
+					Type: "table_row",
+					TableRow: &notion.TableRowBlock{
+						Cells: [][]notion.RichText{
+							{{PlainText: "Header 1"}},
+							{{PlainText: "Header 2"}},
+						},
+					},
+				},
+				{
+					Type: "table_row",
+					TableRow: &notion.TableRowBlock{
+						Cells: [][]notion.RichText{
+							{{PlainText: "Cell 1"}},
+							{{PlainText: "Cell 2"}},
+						},
+					},
+				},
+			},
+			want:    "| Header 1 | Header 2 |\n| --- | --- |\n| Cell 1 | Cell 2 |",
 			wantErr: false,
 		},
 	}

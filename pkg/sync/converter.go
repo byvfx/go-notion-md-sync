@@ -7,6 +7,8 @@ import (
 	"github.com/byvfx/go-notion-md-sync/pkg/notion"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	east "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/text"
 )
 
@@ -22,10 +24,12 @@ func NewConverter() Converter {
 }
 
 func (c *converter) MarkdownToBlocks(content string) ([]map[string]interface{}, error) {
-	// Parse markdown into AST
-	parser := goldmark.New().Parser()
+	// Parse markdown into AST with table extension
+	md := goldmark.New(
+		goldmark.WithExtensions(extension.Table),
+	)
 	reader := text.NewReader([]byte(content))
-	doc := parser.Parse(reader)
+	doc := md.Parser().Parse(reader)
 
 	var blocks []map[string]interface{}
 	source := []byte(content)
@@ -74,6 +78,12 @@ func (c *converter) MarkdownToBlocks(content string) ([]map[string]interface{}, 
 			block := createCodeBlock(text, language)
 			blocks = append(blocks, block)
 			return ast.WalkSkipChildren, nil
+
+		case east.KindTable:
+			table := n.(*east.Table)
+			tableBlocks := c.convertTableToBlocks(table, source)
+			blocks = append(blocks, tableBlocks...)
+			return ast.WalkSkipChildren, nil
 		}
 
 		return ast.WalkContinue, nil
@@ -88,8 +98,13 @@ func (c *converter) MarkdownToBlocks(content string) ([]map[string]interface{}, 
 
 func (c *converter) BlocksToMarkdown(blocks []notion.Block) (string, error) {
 	var md strings.Builder
+	
+	// Track table state
+	var inTable bool
+	var tableRows [][]string
+	var hasHeader bool
 
-	for _, block := range blocks {
+	for i, block := range blocks {
 		switch block.Type {
 		case "heading_1":
 			if block.Heading1 != nil {
@@ -144,10 +159,78 @@ func (c *converter) BlocksToMarkdown(blocks []notion.Block) (string, error) {
 
 		case "divider":
 			md.WriteString("---\n\n")
+
+		case "table":
+			// Start tracking table
+			inTable = true
+			tableRows = [][]string{}
+			hasHeader = false
+			if block.Table != nil {
+				hasHeader = block.Table.HasColumnHeader
+			}
+			
+		case "table_row":
+			if inTable && block.TableRow != nil {
+				var row []string
+				for _, cell := range block.TableRow.Cells {
+					cellText := extractPlainTextFromRichText(cell)
+					row = append(row, cellText)
+				}
+				tableRows = append(tableRows, row)
+			}
+			
+			// Check if this is the last table row
+			isLastTableRow := i == len(blocks)-1 || (i < len(blocks)-1 && blocks[i+1].Type != "table_row")
+			
+			if inTable && isLastTableRow && len(tableRows) > 0 {
+				// Write the table
+				c.writeMarkdownTable(&md, tableRows, hasHeader)
+				inTable = false
+				tableRows = nil
+			}
 		}
 	}
 
 	return strings.TrimSpace(md.String()), nil
+}
+
+func (c *converter) writeMarkdownTable(md *strings.Builder, rows [][]string, hasHeader bool) {
+	if len(rows) == 0 {
+		return
+	}
+	
+	// Determine column count from first row
+	columnCount := len(rows[0])
+	
+	// Write all rows
+	for i, row := range rows {
+		md.WriteString("| ")
+		for j, cell := range row {
+			md.WriteString(cell)
+			if j < len(row)-1 {
+				md.WriteString(" | ")
+			}
+		}
+		// Pad with empty cells if needed
+		for j := len(row); j < columnCount; j++ {
+			md.WriteString(" | ")
+		}
+		md.WriteString(" |\n")
+		
+		// Add separator after header row
+		if i == 0 && hasHeader {
+			md.WriteString("| ")
+			for j := 0; j < columnCount; j++ {
+				md.WriteString("---")
+				if j < columnCount-1 {
+					md.WriteString(" | ")
+				}
+			}
+			md.WriteString(" |\n")
+		}
+	}
+	
+	md.WriteString("\n")
 }
 
 // Helper functions
@@ -367,3 +450,124 @@ func extractLanguageFromFencedCodeBlock(fencedCodeBlock *ast.FencedCodeBlock, so
 	}
 	return ""
 }
+
+func (c *converter) convertTableToBlocks(table *east.Table, source []byte) []map[string]interface{} {
+	// Count columns from the first row
+	var columnCount int
+	var hasHeader bool
+	
+	// Check if table has a header
+	for child := table.FirstChild(); child != nil; child = child.NextSibling() {
+		if _, ok := child.(*east.TableHeader); ok {
+			hasHeader = true
+			// Count columns from the header row
+			break
+		}
+	}
+	
+	// Count columns from the first row (header or body)
+	if firstChild := table.FirstChild(); firstChild != nil {
+		switch node := firstChild.(type) {
+		case *east.TableHeader:
+			// Count cells directly in header
+			for cell := node.FirstChild(); cell != nil; cell = cell.NextSibling() {
+				columnCount++
+			}
+		case *east.TableRow:
+			// Count cells in row
+			for cell := node.FirstChild(); cell != nil; cell = cell.NextSibling() {
+				columnCount++
+			}
+		}
+	}
+	
+	// Collect all table row blocks as children
+	var tableRowBlocks []map[string]interface{}
+	
+	// Convert header rows first if they exist
+	for child := table.FirstChild(); child != nil; child = child.NextSibling() {
+		if tableHeader, ok := child.(*east.TableHeader); ok {
+			// TableHeader contains cells directly, not rows
+			var cells [][]map[string]interface{}
+			for cell := tableHeader.FirstChild(); cell != nil; cell = cell.NextSibling() {
+				if tableCell, ok := cell.(*east.TableCell); ok {
+					cellText := extractTextFromNode(tableCell, source)
+					cellRichText := []map[string]interface{}{
+						{
+							"type": "text",
+							"text": map[string]interface{}{
+								"content": strings.TrimSpace(cellText),
+							},
+						},
+					}
+					cells = append(cells, cellRichText)
+				}
+			}
+			
+			// Create a row block for the header
+			rowBlock := map[string]interface{}{
+				"type": "table_row",
+				"table_row": map[string]interface{}{
+					"cells": cells,
+				},
+			}
+			tableRowBlocks = append(tableRowBlocks, rowBlock)
+		}
+	}
+	
+	// Convert body rows
+	for child := table.FirstChild(); child != nil; child = child.NextSibling() {
+		switch node := child.(type) {
+		case *east.TableRow:
+			// Direct row (no explicit header/body)
+			rowBlock := c.convertTableRow(node, source)
+			tableRowBlocks = append(tableRowBlocks, rowBlock)
+		case *east.TableHeader:
+			// Already handled above
+			continue
+		default:
+			// Skip unknown nodes
+		}
+	}
+	
+	// Create the main table block without children (children are sent as separate blocks)
+	tableBlock := map[string]interface{}{
+		"type": "table",
+		"table": map[string]interface{}{
+			"table_width":       columnCount,
+			"has_column_header": hasHeader,
+			"has_row_header":    false, // Markdown tables don't typically have row headers
+		},
+	}
+	
+	// Return the table block followed by all the row blocks
+	allBlocks := []map[string]interface{}{tableBlock}
+	allBlocks = append(allBlocks, tableRowBlocks...)
+	return allBlocks
+}
+
+func (c *converter) convertTableRow(row *east.TableRow, source []byte) map[string]interface{} {
+	var cells [][]map[string]interface{}
+	for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
+		if tableCell, ok := cell.(*east.TableCell); ok {
+			cellText := extractTextFromNode(tableCell, source)
+			cellRichText := []map[string]interface{}{
+				{
+					"type": "text",
+					"text": map[string]interface{}{
+						"content": strings.TrimSpace(cellText),
+					},
+				},
+			}
+			cells = append(cells, cellRichText)
+		}
+	}
+	
+	return map[string]interface{}{
+		"type": "table_row",
+		"table_row": map[string]interface{}{
+			"cells": cells,
+		},
+	}
+}
+

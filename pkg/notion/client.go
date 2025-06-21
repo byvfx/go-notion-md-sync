@@ -113,12 +113,20 @@ func (c *client) GetPage(ctx context.Context, pageID string) (*Page, error) {
 }
 
 func (c *client) GetPageBlocks(ctx context.Context, pageID string) ([]Block, error) {
-	resp, err := c.doRequest(ctx, "GET", "/blocks/"+pageID+"/children", nil)
+	blocks, err := c.getBlocksRecursive(ctx, pageID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get blocks for page %s: %w", pageID, err)
+	}
+	return blocks, nil
+}
+
+func (c *client) getBlocksRecursive(ctx context.Context, blockID string) ([]Block, error) {
+	resp, err := c.doRequest(ctx, "GET", "/blocks/"+blockID+"/children", nil)
 	if err != nil {
 		if apiErr, ok := err.(*NotionAPIError); ok {
-			apiErr.PageID = pageID
+			apiErr.PageID = blockID
 		}
-		return nil, fmt.Errorf("failed to get blocks for page %s: %w", pageID, err)
+		return nil, fmt.Errorf("failed to get blocks for %s: %w", blockID, err)
 	}
 	defer resp.Body.Close()
 
@@ -127,7 +135,23 @@ func (c *client) GetPageBlocks(ctx context.Context, pageID string) ([]Block, err
 		return nil, fmt.Errorf("failed to decode blocks response: %w", err)
 	}
 
-	return blocksResp.Results, nil
+	var allBlocks []Block
+	for _, block := range blocksResp.Results {
+		allBlocks = append(allBlocks, block)
+		
+		// If this block has children, fetch them recursively
+		if block.HasChildren {
+			childBlocks, err := c.getBlocksRecursive(ctx, block.ID)
+			if err != nil {
+				// Log the error but continue - don't fail the entire operation
+				fmt.Printf("Warning: failed to get child blocks for %s: %v\n", block.ID, err)
+				continue
+			}
+			allBlocks = append(allBlocks, childBlocks...)
+		}
+	}
+
+	return allBlocks, nil
 }
 
 func (c *client) CreatePage(ctx context.Context, parentID string, properties map[string]interface{}) (*Page, error) {
