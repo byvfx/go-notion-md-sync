@@ -10,9 +10,11 @@ All release notes have been organized by version for easier navigation.
 
 ## Current Release
 
-- [v0.7.0 - Enhanced User Experience & Visibility](docs/releases/v0.7.0.md) - Latest release with verify command and enhanced pull visibility
+- [v0.8.0 - Table Support & Enhanced Pull Commands](docs/releases/v0.8.0.md) - Latest release with full table support and single file pull
 
 ## Previous Releases
+
+- [v0.7.0 - Enhanced User Experience & Visibility](docs/releases/v0.7.0.md) - Verify command and enhanced pull visibility
 
 - [v0.6.0 - Interactive Conflict Resolution](docs/releases/v0.6.0.md) - Comprehensive conflict resolution system
 - [v0.5.0 - Git-like Staging Workflow & Major Improvements](docs/releases/v0.5.0.md) - Revolutionary Git-like staging workflow

@@ -1,6 +1,28 @@
 # SESSION_MEMORY.md - Recent Work and Context
 
-## Recent Features Implemented (v0.7.0)
+## Recent Features Implemented (v0.8.0)
+
+### 1. Full Table Support
+- **Bidirectional sync**: Markdown tables ↔ Notion table blocks
+- **Implementation**: Added goldmark table extension, table block types, recursive block fetching
+- **Code Locations**: 
+  - `pkg/notion/types.go`: Added `TableBlock` and `TableRowBlock` structs
+  - `pkg/sync/converter.go`: Added `convertTableToBlocks()` and table markdown conversion
+  - `pkg/notion/client.go`: Added recursive block fetching for nested table rows
+- **Testing**: Created "Table Page 2.md" and verified round-trip conversion works perfectly
+
+### 2. Single File Pull with `--page` Flag
+- **Feature**: Pull specific pages by filename instead of requiring page IDs
+- **Usage**: `notion-md-sync pull --page "My Document.md"`
+- **Implementation**: 
+  - Added `--page` flag to pull command
+  - Created `SyncSpecificFile()` method in engine
+  - Added title-based page matching logic
+- **Code Locations**: 
+  - `pkg/cli/pull.go`: Added `--page` flag and logic
+  - `pkg/sync/engine.go`: Added `SyncSpecificFile()` and `syncSpecificNotionToMarkdown()` methods
+
+## Previous Features (v0.7.0)
 
 ### 1. Enhanced Pull Command Visibility
 - **Problem**: Pull command only showed parent page ID, not actual pages being pulled

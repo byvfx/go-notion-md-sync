@@ -23,6 +23,8 @@ A powerful CLI tool for synchronizing markdown files with Notion pages. Built wi
 - ✅ **Configuration Verification**: Check your setup is ready with `verify` command
 - 📊 **Enhanced Pull Information**: See page titles and progress when pulling from Notion
 - 🏷️ **Parent Page Context**: Status command shows current Notion parent page title
+- 📋 **Table Support**: Full bidirectional sync of Notion tables to markdown tables
+- 🎯 **Single File Pull**: Pull specific pages by filename with `--page` flag
 
 ## Quick Start
 
@@ -190,7 +192,10 @@ Changes staged for sync:
 #   Saving to: docs/Project Overview.md
 #   ✓ Successfully pulled
 
-# Pull a specific page
+# Pull a specific page by filename (new!)
+./bin/notion-md-sync pull --page "My Document.md"
+
+# Pull a specific page by page ID  
 ./bin/notion-md-sync pull --page-id PAGE_ID --output docs/my-page.md
 
 # Pull to a specific directory
@@ -343,6 +348,11 @@ This is the markdown content that syncs with Notion.
   - Supports 70+ programming languages 
   - Auto-maps common aliases (`js` → `javascript`, `py` → `python`)
   - Preserves syntax highlighting in Notion
+- **Tables**: Markdown tables with headers and data rows
+  - Supports any number of columns
+  - Preserves table structure and content
+  - Header row detection and formatting
+  - Full bidirectional sync between Notion and markdown
 - **Blockquotes**: `> quoted text`
 - **Emphasis**: `**bold**`, `*italic*`, and `inline code`
 - **Dividers**: `---` horizontal rules
@@ -416,6 +426,40 @@ notion-md-sync watch --verbose
 # In another terminal, edit files:
 echo "New content" >> docs/my-page.md
 # The file will automatically be staged and synced to Notion!
+```
+
+### Example 5: Working with Tables
+
+```bash
+# 1. Create a markdown file with a table
+cat > docs/sales-report.md << 'EOF'
+---
+title: "Q4 Sales Report"
+sync_enabled: true
+---
+
+# Q4 Sales Report
+
+## Regional Performance
+
+| Region | Q1 Sales | Q2 Sales | Q3 Sales | Q4 Sales |
+| --- | --- | --- | --- | --- |
+| North | $125,000 | $142,000 | $158,000 | $167,000 |
+| South | $98,000 | $115,000 | $128,000 | $135,000 |
+| East | $110,000 | $125,000 | $140,000 | $149,000 |
+| West | $87,000 | $95,000 | $108,000 | $118,000 |
+
+Total revenue increased by 23% this quarter!
+EOF
+
+# 2. Push to Notion - table will be converted to Notion table format
+notion-md-sync push docs/sales-report.md --verbose
+
+# 3. Pull back to verify round-trip conversion works
+notion-md-sync pull --page "Q4 Sales Report.md"
+
+# 4. Check that table structure is preserved
+cat docs/sales-report.md
 ```
 
 ## Configuration Options

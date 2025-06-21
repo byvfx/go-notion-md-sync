@@ -44,6 +44,9 @@ make build
 # Pull all pages from Notion
 ./scripts/run-with-env.sh pull --verbose
 
+# Pull a specific page by filename
+./scripts/run-with-env.sh pull --page "My Document.md"
+
 # Stage and push files to Notion
 ./scripts/run-with-env.sh add docs/my-file.md
 ./scripts/run-with-env.sh push --verbose
@@ -71,6 +74,16 @@ This content will sync with Notion!
 - Headings work
 - Lists work
 - **Bold** and *italic* text
+- Tables work too!
+
+## Data Table
+
+| Feature | Status | Notes |
+| --- | --- | --- |
+| Headings | ✅ | H1, H2, H3 supported |
+| Tables | ✅ | Full bidirectional sync |
+| Lists | ✅ | Bullet and numbered |
+| Code | ✅ | Syntax highlighting |
 ```
 
 ## 🔧 Troubleshooting
