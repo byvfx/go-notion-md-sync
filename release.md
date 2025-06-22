@@ -10,10 +10,11 @@ All release notes have been organized by version for easier navigation.
 
 ## Current Release
 
-- [v0.8.0 - Table Support & Enhanced Pull Commands](docs/releases/v0.8.0.md) - Latest release with full table support and single file pull
+- [v0.8.1 - Watch Command Testing & Reliability Improvements](docs/releases/v0.8.1.md) - Latest release with comprehensive watch command tests and reliability improvements
 
 ## Previous Releases
 
+- [v0.8.0 - Table Support & Enhanced Pull Commands](docs/releases/v0.8.0.md) - Full table support and single file pull
 - [v0.7.0 - Enhanced User Experience & Visibility](docs/releases/v0.7.0.md) - Verify command and enhanced pull visibility
 
 - [v0.6.0 - Interactive Conflict Resolution](docs/releases/v0.6.0.md) - Comprehensive conflict resolution system
