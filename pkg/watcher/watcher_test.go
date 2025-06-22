@@ -364,8 +364,7 @@ func TestDebouncer(t *testing.T) {
 		execCount := 0
 		
 		// Send multiple events rapidly
-		for i := range 5 {
-			_ = i // Avoid unused variable
+		for i := 0; i < 5; i++ {
 			d.debounce("test-key-2", func() {
 				execCount++
 			})
@@ -491,8 +490,9 @@ func TestWatcher_ExcludedPatterns_Integration(t *testing.T) {
 	defer cancel()
 
 	// Start watcher
+	watcherErr := make(chan error, 1)
 	go func() {
-		watcher.Start(ctx)
+		watcherErr <- watcher.Start(ctx)
 	}()
 
 	time.Sleep(100 * time.Millisecond)
@@ -531,4 +531,16 @@ func TestWatcher_ExcludedPatterns_Integration(t *testing.T) {
 
 	assert.True(t, normalFileFound, "Normal markdown file should have been synced")
 	assert.False(t, tmpFileFound, "Temp file should not have been synced")
+	
+	// Cancel context to stop watcher
+	cancel()
+	
+	// Check watcher error
+	select {
+	case err := <-watcherErr:
+		assert.True(t, err == context.Canceled || err == context.DeadlineExceeded,
+			"Expected context.Canceled or context.DeadlineExceeded, got %v", err)
+	case <-time.After(1 * time.Second):
+		t.Error("Watcher did not return within timeout")
+	}
 }
