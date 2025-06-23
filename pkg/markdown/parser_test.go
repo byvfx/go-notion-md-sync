@@ -142,7 +142,7 @@ func TestParser_CreateMarkdownWithFrontmatter(t *testing.T) {
 	}
 }
 
-func TestExtractFrontmatter(t *testing.T) {
+func TestParser_ExtractFrontmatter(t *testing.T) {
 	tests := []struct {
 		name     string
 		metadata map[string]interface{}
@@ -204,7 +204,7 @@ func TestExtractFrontmatter(t *testing.T) {
 	}
 }
 
-func TestFrontmatterFields_ToMetadata(t *testing.T) {
+func TestParser_FrontmatterFields_ToMetadata(t *testing.T) {
 	now := time.Now()
 
 	ff := &FrontmatterFields{
