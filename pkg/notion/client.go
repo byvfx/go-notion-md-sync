@@ -81,7 +81,12 @@ func (c *client) doRequest(ctx context.Context, method, endpoint string, body in
 	}
 
 	if resp.StatusCode >= 400 {
-		defer resp.Body.Close()
+		defer func() {
+		if err := resp.Body.Close(); err != nil {
+			// Log error but don't fail the operation
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
 		var apiErr NotionAPIError
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		if err := json.Unmarshal(bodyBytes, &apiErr); err != nil {
@@ -102,7 +107,12 @@ func (c *client) GetPage(ctx context.Context, pageID string) (*Page, error) {
 		}
 		return nil, fmt.Errorf("failed to get page %s: %w", pageID, err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			// Log error but don't fail the operation
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
 
 	var page Page
 	if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
@@ -128,7 +138,12 @@ func (c *client) getBlocksRecursive(ctx context.Context, blockID string) ([]Bloc
 		}
 		return nil, fmt.Errorf("failed to get blocks for %s: %w", blockID, err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			// Log error but don't fail the operation
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
 
 	var blocksResp BlocksResponse
 	if err := json.NewDecoder(resp.Body).Decode(&blocksResp); err != nil {
@@ -167,7 +182,12 @@ func (c *client) CreatePage(ctx context.Context, parentID string, properties map
 	if err != nil {
 		return nil, fmt.Errorf("failed to create page: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			// Log error but don't fail the operation
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
 
 	var page Page
 	if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
@@ -275,7 +295,12 @@ func (c *client) RecreatePageWithBlocks(ctx context.Context, parentID string, pr
 	if err != nil {
 		return nil, fmt.Errorf("failed to recreate page: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			// Log error but don't fail the operation
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
 
 	var page Page
 	if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
@@ -298,7 +323,12 @@ func (c *client) SearchPages(ctx context.Context, query string) ([]Page, error) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to search pages: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			// Log error but don't fail the operation
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
 
 	var searchResp SearchResponse
 	if err := json.NewDecoder(resp.Body).Decode(&searchResp); err != nil {
@@ -313,7 +343,12 @@ func (c *client) GetChildPages(ctx context.Context, parentID string) ([]Page, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to get child pages: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			// Log error but don't fail the operation
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
 
 	var blocksResp BlocksResponse
 	if err := json.NewDecoder(resp.Body).Decode(&blocksResp); err != nil {
