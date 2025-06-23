@@ -37,7 +37,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		client := notion.NewClient(cfg.Notion.Token)
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		
+
 		page, err := client.GetPage(ctx, cfg.Notion.ParentPageID)
 		if err == nil {
 			parentPageTitle = extractPageTitle(page)

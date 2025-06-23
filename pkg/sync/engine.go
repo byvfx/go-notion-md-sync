@@ -393,7 +393,7 @@ func (e *engine) syncSpecificNotionToMarkdown(ctx context.Context, filename stri
 	// Find the page that matches the filename
 	var targetPage *notion.Page
 	targetTitle := strings.TrimSuffix(filepath.Base(filename), ".md")
-	
+
 	for _, page := range pages {
 		pageTitle := e.extractTitleFromPage(&page)
 		if pageTitle == targetTitle {
@@ -408,12 +408,12 @@ func (e *engine) syncSpecificNotionToMarkdown(ctx context.Context, filename stri
 
 	// Create the file path
 	filePath := filepath.Join(e.config.Directories.MarkdownRoot, filename)
-	
+
 	// Sync this specific page
 	fmt.Printf("Pulling page: %s\n", e.extractTitleFromPage(targetPage))
 	fmt.Printf("  Notion ID: %s\n", targetPage.ID)
 	fmt.Printf("  Saving to: %s\n", filePath)
-	
+
 	if err := e.SyncNotionToFile(ctx, targetPage.ID, filePath); err != nil {
 		return fmt.Errorf("failed to sync page %s: %w", targetPage.ID, err)
 	}

@@ -98,7 +98,7 @@ func (c *converter) MarkdownToBlocks(content string) ([]map[string]interface{}, 
 
 func (c *converter) BlocksToMarkdown(blocks []notion.Block) (string, error) {
 	var md strings.Builder
-	
+
 	// Track table state
 	var inTable bool
 	var tableRows [][]string
@@ -168,7 +168,7 @@ func (c *converter) BlocksToMarkdown(blocks []notion.Block) (string, error) {
 			if block.Table != nil {
 				hasHeader = block.Table.HasColumnHeader
 			}
-			
+
 		case "table_row":
 			if inTable && block.TableRow != nil {
 				var row []string
@@ -178,10 +178,10 @@ func (c *converter) BlocksToMarkdown(blocks []notion.Block) (string, error) {
 				}
 				tableRows = append(tableRows, row)
 			}
-			
+
 			// Check if this is the last table row
 			isLastTableRow := i == len(blocks)-1 || (i < len(blocks)-1 && blocks[i+1].Type != "table_row")
-			
+
 			if inTable && isLastTableRow && len(tableRows) > 0 {
 				// Write the table
 				c.writeMarkdownTable(&md, tableRows, hasHeader)
@@ -198,10 +198,10 @@ func (c *converter) writeMarkdownTable(md *strings.Builder, rows [][]string, has
 	if len(rows) == 0 {
 		return
 	}
-	
+
 	// Determine column count from first row
 	columnCount := len(rows[0])
-	
+
 	// Write all rows
 	for i, row := range rows {
 		md.WriteString("| ")
@@ -216,7 +216,7 @@ func (c *converter) writeMarkdownTable(md *strings.Builder, rows [][]string, has
 			md.WriteString(" | ")
 		}
 		md.WriteString(" |\n")
-		
+
 		// Add separator after header row
 		if i == 0 && hasHeader {
 			md.WriteString("| ")
@@ -229,7 +229,7 @@ func (c *converter) writeMarkdownTable(md *strings.Builder, rows [][]string, has
 			md.WriteString(" |\n")
 		}
 	}
-	
+
 	md.WriteString("\n")
 }
 
@@ -455,7 +455,7 @@ func (c *converter) convertTableToBlocks(table *east.Table, source []byte) []map
 	// Count columns from the first row
 	var columnCount int
 	var hasHeader bool
-	
+
 	// Check if table has a header
 	for child := table.FirstChild(); child != nil; child = child.NextSibling() {
 		if _, ok := child.(*east.TableHeader); ok {
@@ -464,7 +464,7 @@ func (c *converter) convertTableToBlocks(table *east.Table, source []byte) []map
 			break
 		}
 	}
-	
+
 	// Count columns from the first row (header or body)
 	if firstChild := table.FirstChild(); firstChild != nil {
 		switch node := firstChild.(type) {
@@ -480,10 +480,10 @@ func (c *converter) convertTableToBlocks(table *east.Table, source []byte) []map
 			}
 		}
 	}
-	
+
 	// Collect all table row blocks as children
 	var tableRowBlocks []map[string]interface{}
-	
+
 	// Convert header rows first if they exist
 	for child := table.FirstChild(); child != nil; child = child.NextSibling() {
 		if tableHeader, ok := child.(*east.TableHeader); ok {
@@ -503,7 +503,7 @@ func (c *converter) convertTableToBlocks(table *east.Table, source []byte) []map
 					cells = append(cells, cellRichText)
 				}
 			}
-			
+
 			// Create a row block for the header
 			rowBlock := map[string]interface{}{
 				"type": "table_row",
@@ -514,7 +514,7 @@ func (c *converter) convertTableToBlocks(table *east.Table, source []byte) []map
 			tableRowBlocks = append(tableRowBlocks, rowBlock)
 		}
 	}
-	
+
 	// Convert body rows
 	for child := table.FirstChild(); child != nil; child = child.NextSibling() {
 		switch node := child.(type) {
@@ -529,7 +529,7 @@ func (c *converter) convertTableToBlocks(table *east.Table, source []byte) []map
 			// Skip unknown nodes
 		}
 	}
-	
+
 	// Create the main table block without children (children are sent as separate blocks)
 	tableBlock := map[string]interface{}{
 		"type": "table",
@@ -539,7 +539,7 @@ func (c *converter) convertTableToBlocks(table *east.Table, source []byte) []map
 			"has_row_header":    false, // Markdown tables don't typically have row headers
 		},
 	}
-	
+
 	// Return the table block followed by all the row blocks
 	allBlocks := []map[string]interface{}{tableBlock}
 	allBlocks = append(allBlocks, tableRowBlocks...)
@@ -562,7 +562,7 @@ func (c *converter) convertTableRow(row *east.TableRow, source []byte) map[strin
 			cells = append(cells, cellRichText)
 		}
 	}
-	
+
 	return map[string]interface{}{
 		"type": "table_row",
 		"table_row": map[string]interface{}{
@@ -570,4 +570,3 @@ func (c *converter) convertTableRow(row *east.TableRow, source []byte) map[strin
 		},
 	}
 }
-

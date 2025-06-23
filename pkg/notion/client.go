@@ -82,11 +82,11 @@ func (c *client) doRequest(ctx context.Context, method, endpoint string, body in
 
 	if resp.StatusCode >= 400 {
 		defer func() {
-		if err := resp.Body.Close(); err != nil {
-			// Log error but don't fail the operation
-			fmt.Printf("Warning: failed to close response body: %v\n", err)
-		}
-	}()
+			if err := resp.Body.Close(); err != nil {
+				// Log error but don't fail the operation
+				fmt.Printf("Warning: failed to close response body: %v\n", err)
+			}
+		}()
 		var apiErr NotionAPIError
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		if err := json.Unmarshal(bodyBytes, &apiErr); err != nil {
@@ -153,7 +153,7 @@ func (c *client) getBlocksRecursive(ctx context.Context, blockID string) ([]Bloc
 	var allBlocks []Block
 	for _, block := range blocksResp.Results {
 		allBlocks = append(allBlocks, block)
-		
+
 		// If this block has children, fetch them recursively
 		if block.HasChildren {
 			childBlocks, err := c.getBlocksRecursive(ctx, block.ID)

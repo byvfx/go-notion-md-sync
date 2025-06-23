@@ -26,11 +26,11 @@ type mockEngine struct {
 func (m *mockEngine) SyncFileToNotion(ctx context.Context, filePath string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	if m.syncError != nil {
 		return m.syncError
 	}
-	
+
 	m.syncedFiles = append(m.syncedFiles, filePath)
 	return nil
 }
@@ -69,11 +69,11 @@ func (m *mockEngine) setSyncError(err error) {
 func setupTestDir(t *testing.T) (string, func()) {
 	tempDir, err := os.MkdirTemp("", "watcher-test-*")
 	require.NoError(t, err)
-	
+
 	cleanup := func() {
 		os.RemoveAll(tempDir)
 	}
-	
+
 	return tempDir, cleanup
 }
 
@@ -142,7 +142,7 @@ func TestNewWatcher(t *testing.T) {
 				assert.Equal(t, cfg, watcher.config)
 				assert.NotNil(t, watcher.debouncer)
 				assert.Equal(t, 2*time.Second, watcher.debouncer.interval)
-				
+
 				// Clean up
 				watcher.Close()
 			}
@@ -319,9 +319,9 @@ func TestWatcher_syncFile(t *testing.T) {
 
 	t.Run("successful sync", func(t *testing.T) {
 		engine.reset()
-		
+
 		watcher.syncFile(ctx, testFile)
-		
+
 		syncedFiles := engine.getSyncedFiles()
 		assert.Len(t, syncedFiles, 1)
 		assert.Equal(t, testFile, syncedFiles[0])
@@ -330,10 +330,10 @@ func TestWatcher_syncFile(t *testing.T) {
 	t.Run("sync error", func(t *testing.T) {
 		engine.reset()
 		engine.setSyncError(fmt.Errorf("sync failed"))
-		
+
 		// This should not panic even with an error
 		watcher.syncFile(ctx, testFile)
-		
+
 		syncedFiles := engine.getSyncedFiles()
 		assert.Len(t, syncedFiles, 0)
 	})
@@ -347,7 +347,7 @@ func TestDebouncer(t *testing.T) {
 
 	t.Run("single event", func(t *testing.T) {
 		executed := false
-		
+
 		d.debounce("test-key", func() {
 			executed = true
 		})
@@ -362,7 +362,7 @@ func TestDebouncer(t *testing.T) {
 
 	t.Run("multiple events debounced", func(t *testing.T) {
 		execCount := 0
-		
+
 		// Send multiple events rapidly
 		for i := 0; i < 5; i++ {
 			d.debounce("test-key-2", func() {
@@ -373,7 +373,7 @@ func TestDebouncer(t *testing.T) {
 
 		// Wait for debounce interval
 		time.Sleep(150 * time.Millisecond)
-		
+
 		// Should only execute once
 		assert.Equal(t, 1, execCount)
 	})
@@ -381,12 +381,12 @@ func TestDebouncer(t *testing.T) {
 	t.Run("different keys execute separately", func(t *testing.T) {
 		exec1 := false
 		exec2 := false
-		
+
 		d.debounce("key1", func() { exec1 = true })
 		d.debounce("key2", func() { exec2 = true })
 
 		time.Sleep(150 * time.Millisecond)
-		
+
 		assert.True(t, exec1)
 		assert.True(t, exec2)
 	})
@@ -459,7 +459,7 @@ func TestWatcher_Start_Integration(t *testing.T) {
 	select {
 	case err := <-watcherErr:
 		// Accept either canceled or deadline exceeded
-		assert.True(t, err == context.Canceled || err == context.DeadlineExceeded, 
+		assert.True(t, err == context.Canceled || err == context.DeadlineExceeded,
 			"Expected context.Canceled or context.DeadlineExceeded, got %v", err)
 	case <-time.After(2 * time.Second):
 		t.Fatal("Watcher did not stop within timeout")
@@ -516,7 +516,7 @@ func TestWatcher_ExcludedPatterns_Integration(t *testing.T) {
 	time.Sleep(3 * time.Second)
 
 	syncedFiles := engine.getSyncedFiles()
-	
+
 	// Should only contain the normal file
 	normalFileFound := false
 	tmpFileFound := false
@@ -531,10 +531,10 @@ func TestWatcher_ExcludedPatterns_Integration(t *testing.T) {
 
 	assert.True(t, normalFileFound, "Normal markdown file should have been synced")
 	assert.False(t, tmpFileFound, "Temp file should not have been synced")
-	
+
 	// Cancel context to stop watcher
 	cancel()
-	
+
 	// Check watcher error
 	select {
 	case err := <-watcherErr:

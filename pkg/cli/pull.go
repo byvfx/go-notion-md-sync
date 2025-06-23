@@ -80,7 +80,7 @@ func runPull(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Page ID: %s\n", pullPageID)
 		fmt.Printf("  Output: %s\n", pullOutput)
 		printVerbose("Pulling page: %s to %s", pullPageID, pullOutput)
-		
+
 		if err := engine.SyncNotionToFile(ctx, pullPageID, pullOutput); err != nil {
 			return fmt.Errorf("failed to pull page: %w", err)
 		}
@@ -89,7 +89,7 @@ func runPull(cmd *cobra.Command, args []string) error {
 	} else if pullPage != "" {
 		fmt.Printf("Pulling specific page: %s\n", pullPage)
 		printVerbose("Pulling page by filename: %s", pullPage)
-		
+
 		if err := engine.SyncSpecificFile(ctx, pullPage, "pull"); err != nil {
 			return fmt.Errorf("failed to pull page %s: %w", pullPage, err)
 		}
@@ -98,7 +98,7 @@ func runPull(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Printf("Pulling all pages from Notion parent page: %s\n", cfg.Notion.ParentPageID)
 		printVerbose("Pulling all pages from parent: %s", cfg.Notion.ParentPageID)
-		
+
 		if err := engine.SyncAll(ctx, "pull"); err != nil {
 			return fmt.Errorf("pull failed: %w", err)
 		}
