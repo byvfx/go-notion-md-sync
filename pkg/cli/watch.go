@@ -47,7 +47,11 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create watcher: %w", err)
 	}
-	defer w.Close()
+	defer func() {
+		if err := w.Close(); err != nil {
+			fmt.Printf("Warning: failed to close watcher: %v\n", err)
+		}
+	}()
 
 	// Set up signal handling
 	ctx, cancel := context.WithCancel(context.Background())
