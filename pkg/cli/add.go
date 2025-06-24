@@ -112,49 +112,68 @@ func getAllChangedFiles(stagingArea *staging.StagingArea) ([]string, error) {
 }
 
 func expandFilePattern(workingDir, pattern string) ([]string, error) {
-	var files []string
+	fullPath := getFullPath(workingDir, pattern)
 
 	// Check if it's a directory
-	fullPath := pattern
-	if !filepath.IsAbs(pattern) {
-		fullPath = filepath.Join(workingDir, pattern)
-	}
-
-	info, err := os.Stat(fullPath)
-	if err == nil && info.IsDir() {
-		// It's a directory, find all .md files in it
-		err := filepath.Walk(fullPath, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-
-			if !info.IsDir() && strings.HasSuffix(path, ".md") {
-				// Convert to relative path
-				relPath, err := filepath.Rel(workingDir, path)
-				if err != nil {
-					return err
-				}
-				files = append(files, relPath)
-			}
-			return nil
-		})
+	if files, isDir, err := expandDirectory(workingDir, fullPath); isDir {
 		return files, err
 	}
 
 	// Try as a glob pattern
+	if files, err := expandGlobPattern(workingDir, fullPath); err != nil || len(files) > 0 {
+		return files, err
+	}
+
+	// Try as a single file
+	return expandSingleFile(workingDir, pattern)
+}
+
+func getFullPath(workingDir, pattern string) string {
+	if filepath.IsAbs(pattern) {
+		return pattern
+	}
+	return filepath.Join(workingDir, pattern)
+}
+
+func expandDirectory(workingDir, fullPath string) ([]string, bool, error) {
+	info, err := os.Stat(fullPath)
+	if err != nil || !info.IsDir() {
+		return nil, false, nil
+	}
+
+	var files []string
+	err = filepath.Walk(fullPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if isMarkdownFile(path, info) {
+			relPath, err := filepath.Rel(workingDir, path)
+			if err != nil {
+				return err
+			}
+			files = append(files, relPath)
+		}
+		return nil
+	})
+
+	return files, true, err
+}
+
+func expandGlobPattern(workingDir, fullPath string) ([]string, error) {
 	matches, err := filepath.Glob(fullPath)
 	if err != nil {
 		return nil, err
 	}
 
+	var files []string
 	for _, match := range matches {
 		info, err := os.Stat(match)
 		if err != nil {
 			continue
 		}
 
-		// Only include .md files
-		if !info.IsDir() && strings.HasSuffix(match, ".md") {
+		if isMarkdownFile(match, info) {
 			relPath, err := filepath.Rel(workingDir, match)
 			if err != nil {
 				continue
@@ -163,24 +182,34 @@ func expandFilePattern(workingDir, pattern string) ([]string, error) {
 		}
 	}
 
-	// If no matches found and it looks like a file, try to add it directly
-	if len(files) == 0 {
-		relPath := pattern
-		if filepath.IsAbs(pattern) {
-			relPath, err = filepath.Rel(workingDir, pattern)
-			if err != nil {
-				return nil, err
-			}
-		}
+	return files, nil
+}
 
-		// Check if the file exists and is a .md file
-		fullPath = filepath.Join(workingDir, relPath)
-		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() && strings.HasSuffix(relPath, ".md") {
-			files = append(files, relPath)
+func expandSingleFile(workingDir, pattern string) ([]string, error) {
+	relPath := pattern
+	if filepath.IsAbs(pattern) {
+		var err error
+		relPath, err = filepath.Rel(workingDir, pattern)
+		if err != nil {
+			return nil, err
 		}
 	}
 
-	return files, nil
+	fullPath := filepath.Join(workingDir, relPath)
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		return nil, nil
+	}
+
+	if isMarkdownFile(relPath, info) {
+		return []string{relPath}, nil
+	}
+
+	return nil, nil
+}
+
+func isMarkdownFile(path string, info os.FileInfo) bool {
+	return !info.IsDir() && strings.HasSuffix(path, ".md")
 }
 
 func removeDuplicates(files []string) []string {
