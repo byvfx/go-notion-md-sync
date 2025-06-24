@@ -1,3 +1,4 @@
+//go:build integration
 // +build integration
 
 package cli
@@ -15,7 +16,7 @@ import (
 func TestSyncCommand_Integration(t *testing.T) {
 	token := os.Getenv("NOTION_API_TOKEN")
 	parentID := os.Getenv("NOTION_PARENT_PAGE_ID")
-	
+
 	if token == "" || parentID == "" {
 		t.Skip("Skipping integration test: NOTION_API_TOKEN or NOTION_PARENT_PAGE_ID not set")
 	}
@@ -45,7 +46,7 @@ directories:
 		Use:  "sync",
 		RunE: runSync,
 	}
-	
+
 	cmd.Flags().StringVarP(&syncFile, "file", "f", "", "specific file to sync")
 	cmd.Flags().StringVarP(&syncDirection, "direction", "d", "push", "sync direction")
 	cmd.Flags().StringVar(&syncDirectory, "directory", "", "directory containing markdown files")
@@ -60,7 +61,7 @@ directories:
 	configPath = configFile
 
 	cmd.SetArgs([]string{"push"})
-	
+
 	err := cmd.Execute()
 	require.NoError(t, err)
 }

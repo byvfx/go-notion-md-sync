@@ -98,56 +98,84 @@ func (cr *ConflictResolver) showDiff(localContent, remoteContent string) error {
 	// Clean up for better readability
 	diffs = dmp.DiffCleanupSemantic(diffs)
 
-	fmt.Println("\nDifferences:")
-	fmt.Println("  + Added in remote (Notion)")
-	fmt.Println("  - Removed in remote (Notion)")
-	fmt.Println()
+	printDiffHeader()
 
 	for _, diff := range diffs {
 		switch diff.Type {
 		case diffmatchpatch.DiffEqual:
-			// Show some context around changes
-			lines := strings.Split(diff.Text, "\n")
-			if len(lines) > 6 {
-				// Show first 2 and last 2 lines with ellipsis
-				for i := 0; i < 2 && i < len(lines); i++ {
-					if lines[i] != "" {
-						fmt.Printf("   %s\n", lines[i])
-					}
-				}
-				if len(lines) > 4 {
-					fmt.Println("   ...")
-				}
-				for i := len(lines) - 2; i < len(lines); i++ {
-					if i >= 0 && lines[i] != "" {
-						fmt.Printf("   %s\n", lines[i])
-					}
-				}
-			} else {
-				for _, line := range lines {
-					if line != "" {
-						fmt.Printf("   %s\n", line)
-					}
-				}
-			}
+			printContextLines(diff.Text)
 		case diffmatchpatch.DiffDelete:
-			lines := strings.Split(diff.Text, "\n")
-			for _, line := range lines {
-				if line != "" {
-					fmt.Printf(" - %s\n", line)
-				}
-			}
+			printDeletedLines(diff.Text)
 		case diffmatchpatch.DiffInsert:
-			lines := strings.Split(diff.Text, "\n")
-			for _, line := range lines {
-				if line != "" {
-					fmt.Printf(" + %s\n", line)
-				}
-			}
+			printInsertedLines(diff.Text)
 		}
 	}
 
 	return nil
+}
+
+func printDiffHeader() {
+	fmt.Println("\nDifferences:")
+	fmt.Println("  + Added in remote (Notion)")
+	fmt.Println("  - Removed in remote (Notion)")
+	fmt.Println()
+}
+
+func printContextLines(text string) {
+	lines := strings.Split(text, "\n")
+
+	if len(lines) > 6 {
+		printTruncatedContext(lines)
+	} else {
+		printFullContext(lines)
+	}
+}
+
+func printTruncatedContext(lines []string) {
+	// Show first 2 lines
+	for i := 0; i < 2 && i < len(lines); i++ {
+		if lines[i] != "" {
+			fmt.Printf("   %s\n", lines[i])
+		}
+	}
+
+	// Show ellipsis if needed
+	if len(lines) > 4 {
+		fmt.Println("   ...")
+	}
+
+	// Show last 2 lines
+	for i := len(lines) - 2; i < len(lines); i++ {
+		if i >= 0 && lines[i] != "" {
+			fmt.Printf("   %s\n", lines[i])
+		}
+	}
+}
+
+func printFullContext(lines []string) {
+	for _, line := range lines {
+		if line != "" {
+			fmt.Printf("   %s\n", line)
+		}
+	}
+}
+
+func printDeletedLines(text string) {
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		if line != "" {
+			fmt.Printf(" - %s\n", line)
+		}
+	}
+}
+
+func printInsertedLines(text string) {
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		if line != "" {
+			fmt.Printf(" + %s\n", line)
+		}
+	}
 }
 
 // HasConflict checks if there's a conflict between local and remote content

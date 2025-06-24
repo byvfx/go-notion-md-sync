@@ -103,78 +103,68 @@ func (s *StagingArea) GetStatus() (map[string]FileStatus, error) {
 		return nil, fmt.Errorf("failed to load index: %w", err)
 	}
 
-	status := make(map[string]FileStatus)
-	statusMutex := sync.Mutex{}
-
-	// Collect all markdown files first
-	var filesToCheck []struct {
-		path string
-		info os.FileInfo
-	}
-
-	err = filepath.Walk(s.rootDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Skip directories and non-markdown files
-		if info.IsDir() || filepath.Ext(path) != ".md" {
-			return nil
-		}
-
-		// Skip staging directory
-		if s.isInStagingDir(path) {
-			return nil
-		}
-
-		filesToCheck = append(filesToCheck, struct {
-			path string
-			info os.FileInfo
-		}{path, info})
-
-		return nil
-	})
-
+	filesToCheck, err := s.collectMarkdownFiles()
 	if err != nil {
 		return nil, fmt.Errorf("failed to walk directory: %w", err)
 	}
 
-	// Process files concurrently
-	maxWorkers := 5
-	if len(filesToCheck) < maxWorkers {
-		maxWorkers = len(filesToCheck)
+	status := s.processFiles(filesToCheck, index)
+	s.checkDeletedFiles(status, index)
+
+	return status, nil
+}
+
+type fileInfo struct {
+	path string
+	info os.FileInfo
+}
+
+func (s *StagingArea) collectMarkdownFiles() ([]fileInfo, error) {
+	var filesToCheck []fileInfo
+
+	err := filepath.Walk(s.rootDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if s.shouldSkipFile(path, info) {
+			return nil
+		}
+
+		filesToCheck = append(filesToCheck, fileInfo{path: path, info: info})
+		return nil
+	})
+
+	return filesToCheck, err
+}
+
+func (s *StagingArea) shouldSkipFile(path string, info os.FileInfo) bool {
+	// Skip directories
+	if info.IsDir() {
+		return true
 	}
 
-	jobs := make(chan struct {
-		path string
-		info os.FileInfo
-	}, len(filesToCheck))
+	// Skip non-markdown files
+	if filepath.Ext(path) != ".md" {
+		return true
+	}
 
+	// Skip staging directory
+	return s.isInStagingDir(path)
+}
+
+func (s *StagingArea) processFiles(filesToCheck []fileInfo, index map[string]FileEntry) map[string]FileStatus {
+	status := make(map[string]FileStatus)
+	statusMutex := sync.Mutex{}
+
+	maxWorkers := getMaxWorkers(len(filesToCheck))
+	jobs := make(chan fileInfo, len(filesToCheck))
 	var wg sync.WaitGroup
 
 	// Start workers
 	for i := 0; i < maxWorkers; i++ {
 		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for job := range jobs {
-				relPath, err := filepath.Rel(s.rootDir, job.path)
-				if err != nil {
-					continue
-				}
-
-				fileStatus, err := s.getFileStatus(relPath, job.info, index)
-				if err != nil {
-					continue
-				}
-
-				if fileStatus != StatusUnmodified {
-					statusMutex.Lock()
-					status[relPath] = fileStatus
-					statusMutex.Unlock()
-				}
-			}
-		}()
+		go s.statusWorker(&wg, jobs, index, status, &statusMutex)
 	}
 
 	// Send jobs
@@ -183,10 +173,41 @@ func (s *StagingArea) GetStatus() (map[string]FileStatus, error) {
 	}
 	close(jobs)
 
-	// Wait for all workers to complete
 	wg.Wait()
+	return status
+}
 
-	// Check for deleted files
+func getMaxWorkers(fileCount int) int {
+	const defaultMaxWorkers = 5
+	if fileCount < defaultMaxWorkers {
+		return fileCount
+	}
+	return defaultMaxWorkers
+}
+
+func (s *StagingArea) statusWorker(wg *sync.WaitGroup, jobs <-chan fileInfo, index map[string]FileEntry, status map[string]FileStatus, statusMutex *sync.Mutex) {
+	defer wg.Done()
+
+	for job := range jobs {
+		relPath, err := filepath.Rel(s.rootDir, job.path)
+		if err != nil {
+			continue
+		}
+
+		fileStatus, err := s.getFileStatus(relPath, job.info, index)
+		if err != nil {
+			continue
+		}
+
+		if fileStatus != StatusUnmodified {
+			statusMutex.Lock()
+			status[relPath] = fileStatus
+			statusMutex.Unlock()
+		}
+	}
+}
+
+func (s *StagingArea) checkDeletedFiles(status map[string]FileStatus, index map[string]FileEntry) {
 	for path, entry := range index {
 		fullPath := filepath.Join(s.rootDir, path)
 		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
@@ -198,8 +219,6 @@ func (s *StagingArea) GetStatus() (map[string]FileStatus, error) {
 			}
 		}
 	}
-
-	return status, nil
 }
 
 // AddFile stages a file for sync

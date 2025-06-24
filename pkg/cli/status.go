@@ -29,19 +29,9 @@ func init() {
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
-	// Load configuration to get parent page info
-	parentPageTitle := "Unknown parent page"
-	cfg, err := config.Load(configPath)
-	if err == nil && cfg.Notion.ParentPageID != "" {
-		// Create Notion client to fetch the page title
-		client := notion.NewClient(cfg.Notion.Token)
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		page, err := client.GetPage(ctx, cfg.Notion.ParentPageID)
-		if err == nil {
-			parentPageTitle = extractPageTitle(page)
-		}
+	parentPageTitle, err := getParentPageTitle()
+	if err != nil {
+		parentPageTitle = "Unknown parent page"
 	}
 
 	workingDir, err := os.Getwd()
@@ -59,79 +49,110 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get status: %w", err)
 	}
 
-	// Separate files by status
-	var stagedFiles []string
-	var modifiedFiles []string
-	var newFiles []string
-	var deletedFiles []string
+	files := categorizeFiles(status)
+	printStatus(parentPageTitle, files)
+
+	return nil
+}
+
+type categorizedFiles struct {
+	staged   []string
+	modified []string
+	new      []string
+	deleted  []string
+}
+
+func categorizeFiles(status map[string]staging.FileStatus) *categorizedFiles {
+	files := &categorizedFiles{}
 
 	for file, fileStatus := range status {
 		switch fileStatus {
 		case staging.StatusStaged:
-			stagedFiles = append(stagedFiles, file)
+			files.staged = append(files.staged, file)
 		case staging.StatusModified:
-			modifiedFiles = append(modifiedFiles, file)
+			files.modified = append(files.modified, file)
 		case staging.StatusNew:
-			newFiles = append(newFiles, file)
+			files.new = append(files.new, file)
 		case staging.StatusDeleted:
-			deletedFiles = append(deletedFiles, file)
+			files.deleted = append(files.deleted, file)
 		}
 	}
 
 	// Sort all slices for consistent output
-	sort.Strings(stagedFiles)
-	sort.Strings(modifiedFiles)
-	sort.Strings(newFiles)
-	sort.Strings(deletedFiles)
+	sort.Strings(files.staged)
+	sort.Strings(files.modified)
+	sort.Strings(files.new)
+	sort.Strings(files.deleted)
 
-	// Print status
-	if len(stagedFiles) == 0 && len(modifiedFiles) == 0 && len(newFiles) == 0 && len(deletedFiles) == 0 {
-		fmt.Printf("On parent page: %s\n", parentPageTitle)
-		fmt.Println("nothing to commit, working tree clean")
-		return nil
-	}
+	return files
+}
+
+func printStatus(parentPageTitle string, files *categorizedFiles) {
+	isEmpty := len(files.staged) == 0 && len(files.modified) == 0 &&
+		len(files.new) == 0 && len(files.deleted) == 0
 
 	fmt.Printf("On parent page: %s\n", parentPageTitle)
 
-	// Staged changes
-	if len(stagedFiles) > 0 {
-		fmt.Println("\nChanges staged for sync:")
-		fmt.Println("  (use \"notion-md-sync reset <file>...\" to unstage)")
-		fmt.Println()
-		for _, file := range stagedFiles {
-			fmt.Printf("        \033[32mstaged:\033[0m   %s\n", file)
-		}
+	if isEmpty {
+		fmt.Println("nothing to commit, working tree clean")
+		return
 	}
 
-	// Changes not staged
-	hasUnstaged := len(modifiedFiles) > 0 || len(deletedFiles) > 0
-	if hasUnstaged {
-		fmt.Println("\nChanges not staged for sync:")
-		fmt.Println("  (use \"notion-md-sync add <file>...\" to stage changes)")
-		fmt.Println()
+	printStagedFiles(files.staged)
+	printUnstagedChanges(files.modified, files.deleted)
+	printUntrackedFiles(files.new)
+	printSummary(files)
+}
 
-		for _, file := range modifiedFiles {
-			fmt.Printf("        \033[31mmodified:\033[0m %s\n", file)
-		}
-		for _, file := range deletedFiles {
-			fmt.Printf("        \033[31mdeleted:\033[0m  %s\n", file)
-		}
+func printStagedFiles(stagedFiles []string) {
+	if len(stagedFiles) == 0 {
+		return
 	}
 
-	// Untracked files
-	if len(newFiles) > 0 {
-		fmt.Println("\nUntracked files:")
-		fmt.Println("  (use \"notion-md-sync add <file>...\" to include in what will be synced)")
-		fmt.Println()
-		for _, file := range newFiles {
-			fmt.Printf("        \033[31m%s\033[0m\n", file)
-		}
-	}
-
-	// Summary message
+	fmt.Println("\nChanges staged for sync:")
+	fmt.Println("  (use \"notion-md-sync reset <file>...\" to unstage)")
 	fmt.Println()
-	if hasUnstaged || len(newFiles) > 0 {
-		if len(stagedFiles) > 0 {
+	for _, file := range stagedFiles {
+		fmt.Printf("        \033[32mstaged:\033[0m   %s\n", file)
+	}
+}
+
+func printUnstagedChanges(modifiedFiles, deletedFiles []string) {
+	if len(modifiedFiles) == 0 && len(deletedFiles) == 0 {
+		return
+	}
+
+	fmt.Println("\nChanges not staged for sync:")
+	fmt.Println("  (use \"notion-md-sync add <file>...\" to stage changes)")
+	fmt.Println()
+
+	for _, file := range modifiedFiles {
+		fmt.Printf("        \033[31mmodified:\033[0m %s\n", file)
+	}
+	for _, file := range deletedFiles {
+		fmt.Printf("        \033[31mdeleted:\033[0m  %s\n", file)
+	}
+}
+
+func printUntrackedFiles(newFiles []string) {
+	if len(newFiles) == 0 {
+		return
+	}
+
+	fmt.Println("\nUntracked files:")
+	fmt.Println("  (use \"notion-md-sync add <file>...\" to include in what will be synced)")
+	fmt.Println()
+	for _, file := range newFiles {
+		fmt.Printf("        \033[31m%s\033[0m\n", file)
+	}
+}
+
+func printSummary(files *categorizedFiles) {
+	hasUnstaged := len(files.modified) > 0 || len(files.deleted) > 0
+
+	fmt.Println()
+	if hasUnstaged || len(files.new) > 0 {
+		if len(files.staged) > 0 {
 			fmt.Println("You have staged changes ready to sync and unstaged changes.")
 		} else {
 			fmt.Println("No changes staged for sync.")
@@ -139,11 +160,31 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		fmt.Println("Use \"notion-md-sync add <file>...\" to stage changes for sync.")
 	}
 
-	if len(stagedFiles) > 0 {
+	if len(files.staged) > 0 {
 		fmt.Println("Use \"notion-md-sync push\" to sync staged changes to Notion.")
 	}
+}
 
-	return nil
+func getParentPageTitle() (string, error) {
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return "", err
+	}
+
+	if cfg.Notion.ParentPageID == "" {
+		return "", fmt.Errorf("no parent page ID configured")
+	}
+
+	client := notion.NewClient(cfg.Notion.Token)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	page, err := client.GetPage(ctx, cfg.Notion.ParentPageID)
+	if err != nil {
+		return "", err
+	}
+
+	return extractPageTitle(page), nil
 }
 
 // extractPageTitle extracts the title from a Notion page

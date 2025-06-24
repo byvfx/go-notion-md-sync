@@ -22,21 +22,21 @@ func TestSyncCommand_ArgumentParsing(t *testing.T) {
 			errContains: "invalid direction: invalid",
 		},
 		{
-			name:    "valid push direction",
-			args:    []string{"push", "--config", "test.yaml"},
-			wantErr: true, // Will fail because config doesn't exist, but that's OK
+			name:        "valid push direction",
+			args:        []string{"push", "--config", "test.yaml"},
+			wantErr:     true, // Will fail because config doesn't exist, but that's OK
 			errContains: "failed to load config",
 		},
 		{
-			name:    "valid pull direction", 
-			args:    []string{"pull", "--config", "test.yaml"},
-			wantErr: true, // Will fail because config doesn't exist, but that's OK
+			name:        "valid pull direction",
+			args:        []string{"pull", "--config", "test.yaml"},
+			wantErr:     true, // Will fail because config doesn't exist, but that's OK
 			errContains: "failed to load config",
 		},
 		{
-			name:    "no args uses default direction",
-			args:    []string{"--config", "test.yaml"},
-			wantErr: true, // Will fail because config doesn't exist, but that's OK
+			name:        "no args uses default direction",
+			args:        []string{"--config", "test.yaml"},
+			wantErr:     true, // Will fail because config doesn't exist, but that's OK
 			errContains: "failed to load config",
 		},
 	}

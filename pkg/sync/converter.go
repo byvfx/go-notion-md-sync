@@ -100,98 +100,143 @@ func (c *converter) BlocksToMarkdown(blocks []notion.Block) (string, error) {
 	var md strings.Builder
 
 	// Track table state
-	var inTable bool
-	var tableRows [][]string
-	var hasHeader bool
+	tableState := &tableTracker{
+		rows: [][]string{},
+	}
 
 	for i, block := range blocks {
 		switch block.Type {
-		case "heading_1":
-			if block.Heading1 != nil {
-				text := extractPlainTextFromRichText(block.Heading1.RichText)
-				md.WriteString("# " + text + "\n\n")
-			}
-
-		case "heading_2":
-			if block.Heading2 != nil {
-				text := extractPlainTextFromRichText(block.Heading2.RichText)
-				md.WriteString("## " + text + "\n\n")
-			}
-
-		case "heading_3":
-			if block.Heading3 != nil {
-				text := extractPlainTextFromRichText(block.Heading3.RichText)
-				md.WriteString("### " + text + "\n\n")
-			}
+		case "heading_1", "heading_2", "heading_3":
+			c.writeHeading(&md, &block)
 
 		case "paragraph":
-			if block.Paragraph != nil {
-				text := extractPlainTextFromRichText(block.Paragraph.RichText)
-				if strings.TrimSpace(text) != "" {
-					md.WriteString(text + "\n\n")
-				}
-			}
+			c.writeParagraph(&md, &block)
 
 		case "bulleted_list_item":
-			if block.BulletedListItem != nil {
-				text := extractPlainTextFromRichText(block.BulletedListItem.RichText)
-				md.WriteString("- " + text + "\n")
-			}
+			c.writeBulletedListItem(&md, &block)
 
 		case "numbered_list_item":
-			if block.NumberedListItem != nil {
-				text := extractPlainTextFromRichText(block.NumberedListItem.RichText)
-				md.WriteString("1. " + text + "\n")
-			}
+			c.writeNumberedListItem(&md, &block)
 
 		case "code":
-			if block.Code != nil {
-				code := extractPlainTextFromRichText(block.Code.RichText)
-				language := block.Code.Language
-				md.WriteString("```" + language + "\n" + code + "\n```\n\n")
-			}
+			c.writeCodeBlock(&md, &block)
 
 		case "quote":
-			if block.Quote != nil {
-				text := extractPlainTextFromRichText(block.Quote.RichText)
-				md.WriteString("> " + text + "\n\n")
-			}
+			c.writeQuote(&md, &block)
 
 		case "divider":
 			md.WriteString("---\n\n")
 
 		case "table":
-			// Start tracking table
-			inTable = true
-			tableRows = [][]string{}
-			hasHeader = false
-			if block.Table != nil {
-				hasHeader = block.Table.HasColumnHeader
-			}
+			c.startTable(tableState, &block)
 
 		case "table_row":
-			if inTable && block.TableRow != nil {
-				var row []string
-				for _, cell := range block.TableRow.Cells {
-					cellText := extractPlainTextFromRichText(cell)
-					row = append(row, cellText)
-				}
-				tableRows = append(tableRows, row)
-			}
-
-			// Check if this is the last table row
-			isLastTableRow := i == len(blocks)-1 || (i < len(blocks)-1 && blocks[i+1].Type != "table_row")
-
-			if inTable && isLastTableRow && len(tableRows) > 0 {
-				// Write the table
-				c.writeMarkdownTable(&md, tableRows, hasHeader)
-				inTable = false
-				tableRows = nil
-			}
+			c.processTableRow(tableState, &block, i, blocks, &md)
 		}
 	}
 
 	return strings.TrimSpace(md.String()), nil
+}
+
+type tableTracker struct {
+	inTable   bool
+	rows      [][]string
+	hasHeader bool
+}
+
+func (c *converter) writeHeading(md *strings.Builder, block *notion.Block) {
+	var text string
+	var prefix string
+
+	switch block.Type {
+	case "heading_1":
+		if block.Heading1 != nil {
+			text = extractPlainTextFromRichText(block.Heading1.RichText)
+			prefix = "# "
+		}
+	case "heading_2":
+		if block.Heading2 != nil {
+			text = extractPlainTextFromRichText(block.Heading2.RichText)
+			prefix = "## "
+		}
+	case "heading_3":
+		if block.Heading3 != nil {
+			text = extractPlainTextFromRichText(block.Heading3.RichText)
+			prefix = "### "
+		}
+	}
+
+	if text != "" {
+		md.WriteString(prefix + text + "\n\n")
+	}
+}
+
+func (c *converter) writeParagraph(md *strings.Builder, block *notion.Block) {
+	if block.Paragraph != nil {
+		text := extractPlainTextFromRichText(block.Paragraph.RichText)
+		if strings.TrimSpace(text) != "" {
+			md.WriteString(text + "\n\n")
+		}
+	}
+}
+
+func (c *converter) writeBulletedListItem(md *strings.Builder, block *notion.Block) {
+	if block.BulletedListItem != nil {
+		text := extractPlainTextFromRichText(block.BulletedListItem.RichText)
+		md.WriteString("- " + text + "\n")
+	}
+}
+
+func (c *converter) writeNumberedListItem(md *strings.Builder, block *notion.Block) {
+	if block.NumberedListItem != nil {
+		text := extractPlainTextFromRichText(block.NumberedListItem.RichText)
+		md.WriteString("1. " + text + "\n")
+	}
+}
+
+func (c *converter) writeCodeBlock(md *strings.Builder, block *notion.Block) {
+	if block.Code != nil {
+		code := extractPlainTextFromRichText(block.Code.RichText)
+		language := block.Code.Language
+		md.WriteString("```" + language + "\n" + code + "\n```\n\n")
+	}
+}
+
+func (c *converter) writeQuote(md *strings.Builder, block *notion.Block) {
+	if block.Quote != nil {
+		text := extractPlainTextFromRichText(block.Quote.RichText)
+		md.WriteString("> " + text + "\n\n")
+	}
+}
+
+func (c *converter) startTable(state *tableTracker, block *notion.Block) {
+	state.inTable = true
+	state.rows = [][]string{}
+	state.hasHeader = false
+	if block.Table != nil {
+		state.hasHeader = block.Table.HasColumnHeader
+	}
+}
+
+func (c *converter) processTableRow(state *tableTracker, block *notion.Block, index int, blocks []notion.Block, md *strings.Builder) {
+	if state.inTable && block.TableRow != nil {
+		var row []string
+		for _, cell := range block.TableRow.Cells {
+			cellText := extractPlainTextFromRichText(cell)
+			row = append(row, cellText)
+		}
+		state.rows = append(state.rows, row)
+	}
+
+	// Check if this is the last table row
+	isLastTableRow := index == len(blocks)-1 || (index < len(blocks)-1 && blocks[index+1].Type != "table_row")
+
+	if state.inTable && isLastTableRow && len(state.rows) > 0 {
+		// Write the table
+		c.writeMarkdownTable(md, state.rows, state.hasHeader)
+		state.inTable = false
+		state.rows = nil
+	}
 }
 
 func (c *converter) writeMarkdownTable(md *strings.Builder, rows [][]string, hasHeader bool) {
@@ -406,7 +451,7 @@ func extractPlainTextFromRichText(richTexts []notion.RichText) string {
 	return text.String()
 }
 
-func extractLanguageFromCodeBlock(codeBlock *ast.CodeBlock, source []byte) string {
+func extractLanguageFromCodeBlock(_ *ast.CodeBlock, _ []byte) string {
 	// For indented code blocks, there's typically no language info
 	return ""
 }

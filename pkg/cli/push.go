@@ -40,18 +40,11 @@ func init() {
 }
 
 func runPush(cmd *cobra.Command, args []string) error {
-	// Get working directory
-	workingDir, err := os.Getwd()
+	workingDir, err := getWorkingDirectory()
 	if err != nil {
-		return fmt.Errorf("failed to get working directory: %w", err)
+		return err
 	}
 
-	// Override with directory flag if provided
-	if pushDirectory != "" {
-		workingDir = pushDirectory
-	}
-
-	// Load configuration
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
@@ -60,75 +53,98 @@ func runPush(cmd *cobra.Command, args []string) error {
 	printVerbose("Loaded configuration")
 	printVerbose("Direction: push (markdown → Notion)")
 
-	// Initialize staging area
 	stagingArea := staging.NewStagingArea(workingDir)
 	if err := stagingArea.Initialize(); err != nil {
 		return fmt.Errorf("failed to initialize staging area: %w", err)
 	}
 
-	// Create sync engine
+	filesToPush, err := getFilesToPush(args, workingDir, stagingArea)
+	if err != nil {
+		return err
+	}
+
+	if len(filesToPush) == 0 {
+		fmt.Println("No files staged for sync.")
+		fmt.Println("Use \"notion-md-sync add <file>...\" to stage files, or \"notion-md-sync status\" to see changed files.")
+		return nil
+	}
+
+	if pushDryRun {
+		return performDryRunPush(filesToPush)
+	}
+
+	return performPush(cfg, workingDir, filesToPush, stagingArea)
+}
+
+func getWorkingDirectory() (string, error) {
+	workingDir, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	if pushDirectory != "" {
+		workingDir = pushDirectory
+	}
+
+	return workingDir, nil
+}
+
+func getFilesToPush(args []string, workingDir string, stagingArea *staging.StagingArea) ([]string, error) {
+	if len(args) > 0 {
+		return stageAndGetSpecificFile(args[0], workingDir, stagingArea)
+	}
+
+	return stagingArea.GetStagedFiles()
+}
+
+func stageAndGetSpecificFile(filePath, workingDir string, stagingArea *staging.StagingArea) ([]string, error) {
+	// Convert to relative path if needed
+	if filepath.IsAbs(filePath) {
+		relPath, err := filepath.Rel(workingDir, filePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get relative path: %w", err)
+		}
+		filePath = relPath
+	}
+
+	// Stage the file
+	if err := stagingArea.AddFile(filePath); err != nil {
+		return nil, fmt.Errorf("failed to stage file %s: %w", filePath, err)
+	}
+
+	printVerbose("Auto-staged and will push: %s", filePath)
+	return []string{filePath}, nil
+}
+
+func performDryRunPush(filesToPush []string) error {
+	fmt.Println("DRY RUN: No actual changes will be made")
+	fmt.Printf("Would push %d file(s) to Notion:\n", len(filesToPush))
+	for _, file := range filesToPush {
+		fmt.Printf("  %s\n", file)
+	}
+	return nil
+}
+
+func performPush(cfg *config.Config, workingDir string, filesToPush []string, stagingArea *staging.StagingArea) error {
 	engine := sync.NewEngine(cfg)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	var filesToPush []string
+	results := pushFilesConcurrently(ctx, engine, workingDir, filesToPush)
 
-	if len(args) > 0 {
-		// Push specific file - auto-stage it first
-		filePath := args[0]
+	return processPushResults(results, stagingArea)
+}
 
-		// Convert to relative path if needed
-		if filepath.IsAbs(filePath) {
-			relPath, err := filepath.Rel(workingDir, filePath)
-			if err != nil {
-				return fmt.Errorf("failed to get relative path: %w", err)
-			}
-			filePath = relPath
-		}
+type pushResult struct {
+	file    string
+	success bool
+	error   error
+}
 
-		// Stage the file
-		if err := stagingArea.AddFile(filePath); err != nil {
-			return fmt.Errorf("failed to stage file %s: %w", filePath, err)
-		}
-
-		filesToPush = []string{filePath}
-		printVerbose("Auto-staged and will push: %s", filePath)
-	} else {
-		// Push all staged files
-		stagedFiles, err := stagingArea.GetStagedFiles()
-		if err != nil {
-			return fmt.Errorf("failed to get staged files: %w", err)
-		}
-
-		if len(stagedFiles) == 0 {
-			fmt.Println("No files staged for sync.")
-			fmt.Println("Use \"notion-md-sync add <file>...\" to stage files, or \"notion-md-sync status\" to see changed files.")
-			return nil
-		}
-
-		filesToPush = stagedFiles
-		printVerbose("Found %d staged files to push", len(filesToPush))
-	}
-
-	if pushDryRun {
-		fmt.Println("DRY RUN: No actual changes will be made")
-		fmt.Printf("Would push %d file(s) to Notion:\n", len(filesToPush))
-		for _, file := range filesToPush {
-			fmt.Printf("  %s\n", file)
-		}
-		return nil
-	}
-
-	// Push all files concurrently
-	maxWorkers := 3 // Limit concurrent requests to avoid rate limiting
+func pushFilesConcurrently(ctx context.Context, engine sync.Engine, workingDir string, filesToPush []string) []pushResult {
+	maxWorkers := 3
 	if len(filesToPush) < maxWorkers {
 		maxWorkers = len(filesToPush)
-	}
-
-	type pushResult struct {
-		file    string
-		success bool
-		error   error
 	}
 
 	jobs := make(chan string, len(filesToPush))
@@ -136,19 +152,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 
 	// Start workers
 	for i := 0; i < maxWorkers; i++ {
-		go func() {
-			for relPath := range jobs {
-				fullPath := filepath.Join(workingDir, relPath)
-				printVerbose("Pushing file: %s", relPath)
-
-				err := engine.SyncFileToNotion(ctx, fullPath)
-				results <- pushResult{
-					file:    relPath,
-					success: err == nil,
-					error:   err,
-				}
-			}
-		}()
+		go pushWorker(ctx, engine, workingDir, jobs, results)
 	}
 
 	// Send jobs
@@ -158,11 +162,33 @@ func runPush(cmd *cobra.Command, args []string) error {
 	close(jobs)
 
 	// Collect results
+	var allResults []pushResult
+	for i := 0; i < len(filesToPush); i++ {
+		allResults = append(allResults, <-results)
+	}
+
+	return allResults
+}
+
+func pushWorker(ctx context.Context, engine sync.Engine, workingDir string, jobs <-chan string, results chan<- pushResult) {
+	for relPath := range jobs {
+		fullPath := filepath.Join(workingDir, relPath)
+		printVerbose("Pushing file: %s", relPath)
+
+		err := engine.SyncFileToNotion(ctx, fullPath)
+		results <- pushResult{
+			file:    relPath,
+			success: err == nil,
+			error:   err,
+		}
+	}
+}
+
+func processPushResults(results []pushResult, stagingArea *staging.StagingArea) error {
 	var successfulPushes []string
 	var failedPushes []string
 
-	for i := 0; i < len(filesToPush); i++ {
-		result := <-results
+	for _, result := range results {
 		if result.success {
 			fmt.Printf("✓ Successfully pushed %s to Notion\n", result.file)
 			successfulPushes = append(successfulPushes, result.file)
@@ -172,14 +198,14 @@ func runPush(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Mark successfully pushed files as synced (this will unstage them)
+	// Mark successfully pushed files as synced
 	if len(successfulPushes) > 0 {
 		if err := stagingArea.MarkSynced(successfulPushes); err != nil {
 			printVerbose("Warning: failed to mark files as synced: %v", err)
 		}
 	}
 
-	// Summary
+	// Print summary
 	fmt.Println()
 	if len(successfulPushes) > 0 {
 		fmt.Printf("Successfully pushed %d file(s) to Notion.\n", len(successfulPushes))

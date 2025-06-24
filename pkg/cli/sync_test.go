@@ -50,16 +50,15 @@ func (m *mockSyncEngine) SyncSpecificFile(ctx context.Context, filename, directi
 	return nil
 }
 
-
 func TestRunSync_DirectionValidation(t *testing.T) {
 	// Only test direction validation logic
 	validDirections := []string{"push", "pull", "bidirectional"}
-	
+
 	for _, dir := range validDirections {
 		err := validateDirection(dir)
 		assert.NoError(t, err, "Direction %s should be valid", dir)
 	}
-	
+
 	err := validateDirection("invalid")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid direction")
