@@ -167,7 +167,7 @@ func TestPerformDryRun(t *testing.T) {
 			err := performDryRun(ctx, tt.workingDir, tt.specificFile, tt.direction)
 
 			// Restore stdout and read output
-			w.Close()
+			_ = w.Close()
 			os.Stdout = oldStdout
 
 			buf := make([]byte, 4096)

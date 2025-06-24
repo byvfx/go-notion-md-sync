@@ -8,12 +8,12 @@ import (
 
 func TestLoad(t *testing.T) {
 	// Clear environment variables to avoid interference
-	os.Unsetenv("NOTION_MD_SYNC_NOTION_TOKEN")
-	os.Unsetenv("NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID")
+	_ = os.Unsetenv("NOTION_MD_SYNC_NOTION_TOKEN")
+	_ = os.Unsetenv("NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID")
 	defer func() {
 		// Clean up environment after test
-		os.Unsetenv("NOTION_MD_SYNC_NOTION_TOKEN")
-		os.Unsetenv("NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID")
+		_ = os.Unsetenv("NOTION_MD_SYNC_NOTION_TOKEN")
+		_ = os.Unsetenv("NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID")
 	}()
 
 	// Create a temporary config file
@@ -78,11 +78,11 @@ mapping:
 
 func TestLoadWithEnvironmentVariables(t *testing.T) {
 	// Set environment variables
-	os.Setenv("NOTION_MD_SYNC_NOTION_TOKEN", "env_token")
-	os.Setenv("NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID", "env_page_id")
+	_ = os.Setenv("NOTION_MD_SYNC_NOTION_TOKEN", "env_token")
+	_ = os.Setenv("NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID", "env_page_id")
 	defer func() {
-		os.Unsetenv("NOTION_MD_SYNC_NOTION_TOKEN")
-		os.Unsetenv("NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID")
+		_ = os.Unsetenv("NOTION_MD_SYNC_NOTION_TOKEN")
+		_ = os.Unsetenv("NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID")
 	}()
 
 	// Create a minimal config file
@@ -192,11 +192,11 @@ func TestConfigDefaults(t *testing.T) {
 	configPath := filepath.Join(tempDir, "minimal_config.yaml")
 
 	// Set required environment variables
-	os.Setenv("NOTION_MD_SYNC_NOTION_TOKEN", "test_token")
-	os.Setenv("NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID", "test_page_id")
+	_ = os.Setenv("NOTION_MD_SYNC_NOTION_TOKEN", "test_token")
+	_ = os.Setenv("NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID", "test_page_id")
 	defer func() {
-		os.Unsetenv("NOTION_MD_SYNC_NOTION_TOKEN")
-		os.Unsetenv("NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID")
+		_ = os.Unsetenv("NOTION_MD_SYNC_NOTION_TOKEN")
+		_ = os.Unsetenv("NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID")
 	}()
 
 	configContent := `# minimal config`

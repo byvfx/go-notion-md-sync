@@ -228,7 +228,7 @@ func (c *client) UpdatePageBlocks(ctx context.Context, pageID string, blocks []m
 			}
 			return fmt.Errorf("failed to update blocks for page %s (chunk %d-%d): %w", pageID, i+1, end, err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		// Small delay between chunks to avoid rate limiting
 		if end < len(blocks) {
@@ -275,7 +275,7 @@ func (c *client) DeletePage(ctx context.Context, pageID string) error {
 		}
 		return fmt.Errorf("failed to delete page %s: %w", pageID, err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	return nil
 }

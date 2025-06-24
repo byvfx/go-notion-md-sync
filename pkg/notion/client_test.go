@@ -135,9 +135,9 @@ func TestClient_GetPage(t *testing.T) {
 
 				w.WriteHeader(tt.serverStatus)
 				if s, ok := tt.serverResp.(string); ok {
-					w.Write([]byte(s))
+					_, _ = w.Write([]byte(s))
 				} else {
-					json.NewEncoder(w).Encode(tt.serverResp)
+					_ = json.NewEncoder(w).Encode(tt.serverResp)
 				}
 			})
 			defer server.Close()
@@ -238,10 +238,10 @@ func TestClient_GetPageBlocks(t *testing.T) {
 
 				w.WriteHeader(http.StatusOK)
 				if callCount == 1 {
-					json.NewEncoder(w).Encode(tt.serverResp)
+					_ = json.NewEncoder(w).Encode(tt.serverResp)
 				} else {
 					// Return empty results for child block requests
-					json.NewEncoder(w).Encode(map[string]interface{}{"results": []Block{}})
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{"results": []Block{}})
 				}
 			})
 			defer server.Close()
@@ -322,12 +322,12 @@ func TestClient_CreatePage(t *testing.T) {
 
 				body, _ := io.ReadAll(r.Body)
 				var req CreatePageRequest
-				json.Unmarshal(body, &req)
+				_ = json.Unmarshal(body, &req)
 				assert.Equal(t, tt.parentID, req.Parent.PageID)
 				assert.Equal(t, "page_id", req.Parent.Type)
 
 				w.WriteHeader(tt.serverStatus)
-				json.NewEncoder(w).Encode(tt.serverResp)
+				_ = json.NewEncoder(w).Encode(tt.serverResp)
 			})
 			defer server.Close()
 
@@ -401,7 +401,7 @@ func TestClient_UpdatePageBlocks(t *testing.T) {
 					// Getting existing blocks
 					assert.Equal(t, "/blocks/"+tt.pageID+"/children", r.URL.Path)
 					w.WriteHeader(http.StatusOK)
-					json.NewEncoder(w).Encode(BlocksResponse{Results: tt.existingBlocks})
+					_ = json.NewEncoder(w).Encode(BlocksResponse{Results: tt.existingBlocks})
 
 				case "DELETE":
 					// Deleting existing blocks
@@ -413,7 +413,7 @@ func TestClient_UpdatePageBlocks(t *testing.T) {
 					assert.Equal(t, "/blocks/"+tt.pageID+"/children", r.URL.Path)
 					body, _ := io.ReadAll(r.Body)
 					var req map[string]interface{}
-					json.Unmarshal(body, &req)
+					_ = json.Unmarshal(body, &req)
 					if children, ok := req["children"].([]interface{}); ok {
 						assert.LessOrEqual(t, len(children), 100) // Check chunking
 					}
@@ -483,12 +483,12 @@ func TestClient_DeletePage(t *testing.T) {
 
 				body, _ := io.ReadAll(r.Body)
 				var req map[string]interface{}
-				json.Unmarshal(body, &req)
+				_ = json.Unmarshal(body, &req)
 				assert.Equal(t, true, req["archived"])
 
 				w.WriteHeader(tt.serverStatus)
 				if tt.serverStatus != http.StatusOK {
-					json.NewEncoder(w).Encode(NotionAPIError{
+					_ = json.NewEncoder(w).Encode(NotionAPIError{
 						Code:    tt.serverStatus,
 						Message: "Error",
 					})
@@ -550,13 +550,13 @@ func TestClient_SearchPages(t *testing.T) {
 
 				body, _ := io.ReadAll(r.Body)
 				var req SearchRequest
-				json.Unmarshal(body, &req)
+				_ = json.Unmarshal(body, &req)
 				assert.Equal(t, tt.query, req.Query)
 				assert.Equal(t, "page", req.Filter.Value)
 				assert.Equal(t, "object", req.Filter.Property)
 
 				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(tt.serverResp)
+				_ = json.NewEncoder(w).Encode(tt.serverResp)
 			})
 			defer server.Close()
 
@@ -592,7 +592,7 @@ func TestClient_GetChildPages(t *testing.T) {
 			assert.Equal(t, "/blocks/"+parentID+"/children", r.URL.Path)
 
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(BlocksResponse{
+			_ = json.NewEncoder(w).Encode(BlocksResponse{
 				Results: []Block{
 					{ID: childPageID, Type: "child_page"},
 					{ID: "other-block", Type: "paragraph"},
@@ -604,7 +604,7 @@ func TestClient_GetChildPages(t *testing.T) {
 			assert.Equal(t, "/pages/"+childPageID, r.URL.Path)
 
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(Page{
+			_ = json.NewEncoder(w).Encode(Page{
 				ID:     childPageID,
 				Object: "page",
 				URL:    "https://notion.so/child-page",
@@ -668,7 +668,7 @@ func TestClient_RecreatePageWithBlocks(t *testing.T) {
 		assert.NotNil(t, req["children"])
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(Page{
+		_ = json.NewEncoder(w).Encode(Page{
 			ID:     "recreated-page-id",
 			Object: "page",
 			URL:    "https://notion.so/recreated-page",
@@ -726,7 +726,7 @@ func TestClient_ContextCancellation(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(100 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(Page{ID: "test"})
+		_ = json.NewEncoder(w).Encode(Page{ID: "test"})
 	}))
 	defer server.Close()
 
@@ -810,7 +810,7 @@ func TestClient_doRequest_ErrorHandling(t *testing.T) {
 			setupFunc: func() *client {
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(http.StatusBadRequest)
-					w.Write([]byte("not json"))
+					_, _ = w.Write([]byte("not json"))
 				}))
 				return &client{
 					httpClient: &http.Client{},
@@ -846,13 +846,13 @@ func TestClient_RateLimiting(t *testing.T) {
 		if requestCount <= 2 {
 			// Simulate rate limit on first two requests
 			w.WriteHeader(http.StatusTooManyRequests)
-			json.NewEncoder(w).Encode(NotionAPIError{
+			_ = json.NewEncoder(w).Encode(NotionAPIError{
 				Code:    http.StatusTooManyRequests,
 				Message: "Rate limited",
 			})
 		} else {
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(Page{ID: "test"})
+			_ = json.NewEncoder(w).Encode(Page{ID: "test"})
 		}
 	})
 	defer server.Close()
@@ -890,13 +890,13 @@ func TestClient_LargeBlockUpdate(t *testing.T) {
 				case "GET":
 					// Getting existing blocks (empty)
 					w.WriteHeader(http.StatusOK)
-					json.NewEncoder(w).Encode(BlocksResponse{Results: []Block{}})
+					_ = json.NewEncoder(w).Encode(BlocksResponse{Results: []Block{}})
 				case "PATCH":
 					// Counting update requests
 					patchCount++
 					body, _ := io.ReadAll(r.Body)
 					var req map[string]interface{}
-					json.Unmarshal(body, &req)
+					_ = json.Unmarshal(body, &req)
 					if children, ok := req["children"].([]interface{}); ok {
 						assert.LessOrEqual(t, len(children), 100)
 					}
@@ -939,7 +939,7 @@ func TestClient_Headers(t *testing.T) {
 		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(Page{ID: "test"})
+		_ = json.NewEncoder(w).Encode(Page{ID: "test"})
 	})
 	defer server.Close()
 
@@ -989,10 +989,10 @@ func TestClient_RecursiveBlockFetching(t *testing.T) {
 
 		if resp, ok := callMap[blockID]; ok {
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		} else {
 			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(NotionAPIError{
+			_ = json.NewEncoder(w).Encode(NotionAPIError{
 				Code:    http.StatusNotFound,
 				Message: "Block not found",
 			})

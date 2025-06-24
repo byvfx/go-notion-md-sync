@@ -201,7 +201,7 @@ notion_id: test-id
 			err := performDirectorySync(ctx, engine, tempDir, tt.direction)
 
 			// Restore stdout and read output
-			w.Close()
+			_ = w.Close()
 			os.Stdout = oldStdout
 
 			buf := make([]byte, 4096)

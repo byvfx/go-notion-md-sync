@@ -190,7 +190,7 @@ func TestPrintVerbose(t *testing.T) {
 			printVerbose(tt.format, tt.args...)
 
 			// Close writer and read output
-			w.Close()
+			_ = w.Close()
 			buf := make([]byte, 1024)
 			n, _ := r.Read(buf)
 			output := string(buf[:n])

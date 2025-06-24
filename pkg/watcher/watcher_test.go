@@ -71,7 +71,7 @@ func setupTestDir(t *testing.T) (string, func()) {
 	require.NoError(t, err)
 
 	cleanup := func() {
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 	}
 
 	return tempDir, cleanup
@@ -144,7 +144,7 @@ func TestNewWatcher(t *testing.T) {
 				assert.Equal(t, 2*time.Second, watcher.debouncer.interval)
 
 				// Clean up
-				watcher.Close()
+				_ = watcher.Close()
 			}
 		})
 	}
@@ -178,7 +178,7 @@ func TestWatcher_handleEvent(t *testing.T) {
 
 	watcher, err := NewWatcher(cfg, engine)
 	require.NoError(t, err)
-	defer watcher.Close()
+	defer func() { _ = watcher.Close() }()
 
 	ctx := context.Background()
 
@@ -266,7 +266,7 @@ func TestWatcher_isExcluded(t *testing.T) {
 
 	watcher, err := NewWatcher(cfg, engine)
 	require.NoError(t, err)
-	defer watcher.Close()
+	defer func() { _ = watcher.Close() }()
 
 	tests := []struct {
 		name     string
@@ -312,7 +312,7 @@ func TestWatcher_syncFile(t *testing.T) {
 
 	watcher, err := NewWatcher(cfg, engine)
 	require.NoError(t, err)
-	defer watcher.Close()
+	defer func() { _ = watcher.Close() }()
 
 	ctx := context.Background()
 	testFile := filepath.Join(tempDir, "test.md")
@@ -328,12 +328,12 @@ func TestWatcher_syncFile(t *testing.T) {
 		watcher.syncFile(ctx, testFile)
 
 		// Restore stdout
-		w.Close()
+		_ = w.Close()
 		os.Stdout = oldStdout
 
 		// Read captured output (we don't need to check it)
 		buf := make([]byte, 1024)
-		r.Read(buf)
+		_, _ = r.Read(buf)
 
 		syncedFiles := engine.getSyncedFiles()
 		assert.Len(t, syncedFiles, 1)
@@ -353,12 +353,12 @@ func TestWatcher_syncFile(t *testing.T) {
 		watcher.syncFile(ctx, testFile)
 
 		// Restore stdout
-		w.Close()
+		_ = w.Close()
 		os.Stdout = oldStdout
 
 		// Read captured output (we don't need to check it)
 		buf := make([]byte, 1024)
-		r.Read(buf)
+		_, _ = r.Read(buf)
 
 		syncedFiles := engine.getSyncedFiles()
 		assert.Len(t, syncedFiles, 0)
@@ -431,7 +431,7 @@ func TestWatcher_Start_Integration(t *testing.T) {
 
 	watcher, err := NewWatcher(cfg, engine)
 	require.NoError(t, err)
-	defer watcher.Close()
+	defer func() { _ = watcher.Close() }()
 
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -510,7 +510,7 @@ func TestWatcher_ExcludedPatterns_Integration(t *testing.T) {
 
 	watcher, err := NewWatcher(cfg, engine)
 	require.NoError(t, err)
-	defer watcher.Close()
+	defer func() { _ = watcher.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

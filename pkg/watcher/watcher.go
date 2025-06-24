@@ -32,7 +32,7 @@ func NewWatcher(cfg *config.Config, engine sync.Engine) (*Watcher, error) {
 
 	// Add markdown root directory to watcher
 	if err := fsWatcher.Add(cfg.Directories.MarkdownRoot); err != nil {
-		fsWatcher.Close()
+		_ = fsWatcher.Close()
 		return nil, fmt.Errorf("failed to watch directory %s: %w", cfg.Directories.MarkdownRoot, err)
 	}
 
@@ -48,7 +48,7 @@ func NewWatcher(cfg *config.Config, engine sync.Engine) (*Watcher, error) {
 }
 
 func (w *Watcher) Start(ctx context.Context) error {
-	defer w.fsWatcher.Close()
+	defer func() { _ = w.fsWatcher.Close() }()
 
 	for {
 		select {
