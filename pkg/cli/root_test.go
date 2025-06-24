@@ -207,7 +207,9 @@ func TestCommandStructure(t *testing.T) {
 	commands := rootCmd.Commands()
 	commandNames := make([]string, 0, len(commands))
 	for _, cmd := range commands {
-		commandNames = append(commandNames, cmd.Use)
+		// Extract just the command name without arguments
+		name := strings.Fields(cmd.Use)[0]
+		commandNames = append(commandNames, name)
 	}
 
 	for _, expected := range expectedCommands {
