@@ -320,7 +320,20 @@ func TestWatcher_syncFile(t *testing.T) {
 	t.Run("successful sync", func(t *testing.T) {
 		engine.reset()
 
+		// Capture stdout to prevent success message from appearing in test output
+		oldStdout := os.Stdout
+		r, w, _ := os.Pipe()
+		os.Stdout = w
+
 		watcher.syncFile(ctx, testFile)
+
+		// Restore stdout
+		w.Close()
+		os.Stdout = oldStdout
+
+		// Read captured output (we don't need to check it)
+		buf := make([]byte, 1024)
+		r.Read(buf)
 
 		syncedFiles := engine.getSyncedFiles()
 		assert.Len(t, syncedFiles, 1)
@@ -331,8 +344,21 @@ func TestWatcher_syncFile(t *testing.T) {
 		engine.reset()
 		engine.setSyncError(fmt.Errorf("sync failed"))
 
+		// Capture stdout to prevent error message from appearing in test output
+		oldStdout := os.Stdout
+		r, w, _ := os.Pipe()
+		os.Stdout = w
+
 		// This should not panic even with an error
 		watcher.syncFile(ctx, testFile)
+
+		// Restore stdout
+		w.Close()
+		os.Stdout = oldStdout
+
+		// Read captured output (we don't need to check it)
+		buf := make([]byte, 1024)
+		r.Read(buf)
 
 		syncedFiles := engine.getSyncedFiles()
 		assert.Len(t, syncedFiles, 0)
