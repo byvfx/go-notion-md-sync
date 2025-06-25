@@ -1,21 +1,18 @@
-name: Build Binaries
+name: Release
 
 on:
   push:
-    branches: [ main ]
-    tags: [ 'v*' ]
-  pull_request:
-    branches: [ main ]
+    tags:
+      - 'v*'
 
 jobs:
-  build:
+  build-binaries:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         goos: [linux, windows, darwin]
         goarch: [amd64, arm64]
         exclude:
-          # Exclude arm64 for windows as it's less common
           - goos: windows
             goarch: arm64
 
@@ -40,11 +37,6 @@ jobs:
 
     - name: Run tests
       run: go test -v ./...
-
-    - name: Run linter
-      uses: golangci/golangci-lint-action@v6
-      with:
-        version: latest
 
     - name: Set binary name
       id: binary
@@ -80,22 +72,43 @@ jobs:
           ${{ steps.binary.outputs.archive }}.zip
           ${{ steps.binary.outputs.archive }}.tar.gz
 
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+  create-release:
+    needs: build-binaries
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
+    - uses: actions/checkout@v4
+
     - name: Download all artifacts
       uses: actions/download-artifact@v4
+
+    - name: Get version from tag
+      id: version
+      run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+    - name: Read release notes
+      id: release_notes
+      run: |
+        RELEASE_FILE="docs/releases/${{ steps.version.outputs.version }}.md"
+        if [ -f "$RELEASE_FILE" ]; then
+          # Extract content after the first heading
+          CONTENT=$(sed '1,/^#/d' "$RELEASE_FILE")
+          # GitHub Actions requires special handling for multiline strings
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo "$CONTENT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        else
+          echo "body=No release notes found for ${{ steps.version.outputs.version }}" >> $GITHUB_OUTPUT
+        fi
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          **/notion-md-sync-*
-        generate_release_notes: true
+          **/notion-md-sync-*.tar.gz
+          **/notion-md-sync-*.zip
+        body: ${{ steps.release_notes.outputs.body }}
         draft: false
         prerelease: false
