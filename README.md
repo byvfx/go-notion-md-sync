@@ -1,6 +1,6 @@
 # notion-md-sync
 
-[![Build Status](https://github.com/byvfx/go-notion-md-sync/workflows/Build%20Binaries/badge.svg)](https://github.com/byvfx/go-notion-md-sync/actions)
+[![CI Status](https://github.com/byvfx/go-notion-md-sync/workflows/CI/badge.svg)](https://github.com/byvfx/go-notion-md-sync/actions)
 [![Go Report Card](https://goreportcard.com/badge/github.com/byvfx/go-notion-md-sync)](https://goreportcard.com/report/github.com/byvfx/go-notion-md-sync)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub release](https://img.shields.io/github/release/byvfx/go-notion-md-sync.svg)](https://github.com/byvfx/go-notion-md-sync/releases)
@@ -555,6 +555,30 @@ go test ./pkg/staging   # Git-like staging system
 ```bash
 make dev-setup      # Install development tools
 ```
+
+### Release Process
+
+This project uses GitHub Actions for automated releases:
+
+1. **Create Release Notes**: Write release notes in `docs/releases/vX.Y.Z.md`
+2. **Tag the Release**: 
+   ```bash
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+3. **Automated Build**: GitHub Actions will:
+   - Run all tests and linting
+   - Build binaries for Linux, macOS, and Windows (amd64/arm64)
+   - Create a GitHub release with your markdown notes
+   - Upload all binary artifacts
+
+**Note**: Binaries are only built on version tags (`v*`), not on regular commits.
+
+### GitHub Workflows
+
+- **CI** (`ci.yml`): Runs tests and linting on all pushes and PRs
+- **Release** (`release.yml`): Builds binaries and creates releases on version tags
+- **Claude Code** (`claude.yml`): Integrates with Claude for AI-assisted development
 
 ## Security
 

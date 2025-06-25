@@ -73,3 +73,35 @@ notion-md-sync/
 - Always update session_memory.md and CLAUDE.md after performing a release
 - This ensures documentation is consistently tracked across project versions
 - Capture key changes, improvements, and notable modifications in each release cycle
+
+## GitHub Workflows
+
+### CI/CD Pipeline
+- **CI workflow** (`ci.yml`): Runs on all pushes and PRs to main branch
+  - Executes tests with `go test ./...`
+  - Runs linting with `golangci-lint`
+  - Validates code quality before merge
+
+- **Release workflow** (`release.yml`): Triggers only on version tags (`v*`)
+  - Builds binaries for multiple platforms (Linux, Windows, macOS)
+  - Supports both amd64 and arm64 architectures
+  - Creates GitHub releases with artifacts
+  - Uses release notes from `docs/releases/vX.Y.Z.md`
+
+### Release Process
+1. **Write Release Notes**: Create `docs/releases/vX.Y.Z.md` with changelog
+2. **Tag the Version**: 
+   ```bash
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+3. **Automated Release**: GitHub Actions will:
+   - Run all tests
+   - Build cross-platform binaries
+   - Create GitHub release using your markdown notes
+   - Upload binary artifacts (.tar.gz for Unix, .zip for Windows)
+
+### Development Workflow
+- Push to main or create PRs → CI runs tests/linting
+- Tag with version → Release workflow builds and publishes
+- No binaries built on regular commits (only on tags)
