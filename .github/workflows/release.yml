@@ -1,12 +1,12 @@
-name: Release
+name: Build Release Binaries
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [published]
+  workflow_dispatch:
 
 jobs:
-  build-binaries:
+  build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -34,9 +34,6 @@ jobs:
 
     - name: Get dependencies
       run: go mod download
-
-    - name: Run tests
-      run: go test -v ./...
 
     - name: Set binary name
       id: binary
@@ -72,8 +69,8 @@ jobs:
           ${{ steps.binary.outputs.archive }}.zip
           ${{ steps.binary.outputs.archive }}.tar.gz
 
-  create-release:
-    needs: build-binaries
+  release:
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -84,31 +81,26 @@ jobs:
     - name: Download all artifacts
       uses: actions/download-artifact@v4
 
-    - name: Get version from tag
-      id: version
-      run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-    - name: Read release notes
-      id: release_notes
+    - name: Read Release Notes
+      id: notes
       run: |
-        RELEASE_FILE="docs/releases/${{ steps.version.outputs.version }}.md"
-        if [ -f "$RELEASE_FILE" ]; then
-          # Extract content after the first heading
-          CONTENT=$(sed '1,/^#/d' "$RELEASE_FILE")
-          # GitHub Actions requires special handling for multiline strings
-          echo "body<<EOF" >> $GITHUB_OUTPUT
+        TAG_NAME=${GITHUB_REF##*/}
+        FILE="releasenotes/${TAG_NAME}.md"
+        echo "Looking for release notes at $FILE"
+        if [ -f "$FILE" ]; then
+          CONTENT=$(cat "$FILE")
+          echo "release_notes<<EOF" >> $GITHUB_OUTPUT
           echo "$CONTENT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
         else
-          echo "body=No release notes found for ${{ steps.version.outputs.version }}" >> $GITHUB_OUTPUT
+          echo "release_notes=No release notes found for ${TAG_NAME}." >> $GITHUB_OUTPUT
         fi
 
-    - name: Create Release
+    - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
       with:
+        body: ${{ steps.notes.outputs.release_notes }}
         files: |
-          **/notion-md-sync-*.tar.gz
-          **/notion-md-sync-*.zip
-        body: ${{ steps.release_notes.outputs.body }}
+          **/notion-md-sync-*
         draft: false
         prerelease: false
