@@ -30,7 +30,7 @@ pkg/sync/engine.go - 0% coverage (Core sync logic)
 
 ## 🎯 Roadmap to v1.0
 
-### Phase 1: Foundation Hardening (v0.9.0)
+### Phase 1: Foundation Hardening (v0.8.2)
 **Goal**: Production-ready reliability
 
 #### **Critical Test Coverage** ✅ COMPLETED
@@ -170,7 +170,7 @@ notion-md-sync doctor                   # Diagnose common issues
 notion-md-sync migrate <source> <dest>  # Migrate between Notion workspaces
 ```
 
-### Phase 4: Advanced Features (v0.12.0)
+### Phase 4: Advanced Features (v0..0)
 **Goal**: Power user features
 
 #### **Workflow Automation**
