@@ -39,8 +39,10 @@ notion-md-sync/
 │   ├── sync/                     # Core sync logic & conflict resolution
 │   │   ├── engine.go
 │   │   ├── engine_test.go
-│   │   ├── converter.go
-│   │   ├── conflict.go           # Conflict resolution with diff display
+│   │   ├── converter.go         # Enhanced with math & extended blocks
+│   │   ├── converter_test.go
+│   │   ├── database.go          # CSV/Database sync functionality
+│   │   ├── conflict.go          # Conflict resolution with diff display
 │   │   └── conflict_test.go
 │   ├── staging/                  # Git-like staging area
 │   │   ├── staging.go
@@ -56,7 +58,8 @@ notion-md-sync/
 │       ├── add.go               # Git-like staging commands
 │       ├── reset.go
 │       ├── status.go
-│       └── watch.go
+│       ├── watch.go
+│       └── database.go          # Database export/import commands
 ├── internal/                     # Private application code
 │   └── util/                     # Internal utilities
 ├── configs/
@@ -66,6 +69,27 @@ notion-md-sync/
 ├── README.md
 └── Makefile
 ```
+
+## v0.10.0 Features (Phase 2 Complete)
+
+### Extended Block Support
+- **EquationBlock**: LaTeX math equations with `$$` delimiters
+- **Enhanced Images**: Full caption and external URL support
+- **Callouts**: Blockquotes with emoji prefixes
+- **Toggles**: Collapsible sections via HTML details/summary
+- **Bookmarks**: Link blocks with rich preview
+- **Dividers**: Horizontal rule conversion
+
+### Database Integration
+- **DatabaseSync interface**: Export/import CSV functionality
+- **Smart type inference**: Automatic property type detection
+- **NotionDate type**: Flexible date parsing for multiple formats
+- **Select properties**: Dropdown field support
+
+### Enhanced Converter
+- **Math block extraction**: Pre-processing pipeline for `$$` blocks
+- **Placeholder system**: Maintains markdown structure during conversion
+- **Improved AST walking**: Better block detection and handling
 
 ## Session Memories
 
