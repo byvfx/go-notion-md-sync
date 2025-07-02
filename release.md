@@ -4,10 +4,11 @@ All release notes have been organized by version for easier navigation.
 
 ## Current Release
 
-- [v0.10.0 - Feature Completeness (Phase 2)](docs/releases/v0.10.0.md) - Extended Notion blocks, LaTeX math, Mermaid diagrams, and CSV/database integration
+- [v0.10.1 - Bug Fix: Nested Page Pulling](docs/releases/v0.10.1.md) - Critical fix for pull command not fetching nested sub-pages
 
 ## Previous Releases
 
+- [v0.10.0 - Feature Completeness (Phase 2)](docs/releases/v0.10.0.md) - Extended Notion blocks, LaTeX math, Mermaid diagrams, and CSV/database integration
 - [v0.8.2 - Test Coverage & Code Quality Foundation](docs/releases/v0.8.2.md) - Major milestone in code quality with 74% test coverage and A+ Go Report Card
 - [v0.8.1 - Watch Command Testing & Reliability Improvements](docs/releases/v0.8.1.md) - Comprehensive watch command tests and reliability improvements
 - [v0.8.0 - Table Support & Enhanced Pull Commands](docs/releases/v0.8.0.md) - Full table support and single file pull
@@ -22,7 +23,13 @@ All release notes have been organized by version for easier navigation.
 
 ## Release Highlights
 
-### Latest Features (v0.10.0)
+### Latest Bug Fix (v0.10.1)
+- 🐛 **Critical Fix**: Pull command now correctly fetches nested sub-pages
+- 📁 **Directory Structure**: Proper nested directory creation mirroring Notion hierarchy
+- 🔄 **Infinite Loop Fix**: Resolved timeout issues during recursive page fetching
+- 🛡️ **Enhanced Safety**: Improved cycle detection and error handling
+
+### Recent Features (v0.10.0)
 - 🖼️ **Extended Block Support**: Images, callouts, toggles, bookmarks, dividers
 - 🧮 **LaTeX Math Equations**: Full support for mathematical expressions with `$$` blocks
 - 📊 **Mermaid Diagrams**: Preserve and sync diagram code blocks
