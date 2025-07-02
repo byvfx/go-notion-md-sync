@@ -71,6 +71,30 @@ func (m *mockNotionClient) GetChildPages(ctx context.Context, parentID string) (
 	return []notion.Page{}, nil
 }
 
+// Database methods for mock client
+func (m *mockNotionClient) GetDatabase(ctx context.Context, databaseID string) (*notion.Database, error) {
+	return &notion.Database{ID: databaseID}, nil
+}
+
+func (m *mockNotionClient) QueryDatabase(ctx context.Context, databaseID string, request *notion.DatabaseQueryRequest) (*notion.DatabaseQueryResponse, error) {
+	return &notion.DatabaseQueryResponse{
+		Results: []notion.DatabaseRow{},
+		HasMore: false,
+	}, nil
+}
+
+func (m *mockNotionClient) CreateDatabase(ctx context.Context, request *notion.CreateDatabaseRequest) (*notion.Database, error) {
+	return &notion.Database{ID: "new-database-id"}, nil
+}
+
+func (m *mockNotionClient) CreateDatabaseRow(ctx context.Context, databaseID string, properties map[string]notion.PropertyValue) (*notion.DatabaseRow, error) {
+	return &notion.DatabaseRow{ID: "new-row-id"}, nil
+}
+
+func (m *mockNotionClient) UpdateDatabaseRow(ctx context.Context, pageID string, properties map[string]notion.PropertyValue) (*notion.DatabaseRow, error) {
+	return &notion.DatabaseRow{ID: pageID}, nil
+}
+
 type mockParser struct {
 	parseFileFunc                     func(filePath string) (*markdown.Document, error)
 	createMarkdownWithFrontmatterFunc func(filePath string, metadata map[string]interface{}, content string) error

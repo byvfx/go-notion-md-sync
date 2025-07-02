@@ -448,6 +448,158 @@ func TestConverter_MarkdownToBlocks(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name:     "image block",
+			markdown: "![Alt text](https://example.com/image.png)",
+			want: []map[string]interface{}{
+				{
+					"type": "image",
+					"image": map[string]interface{}{
+						"type": "external",
+						"external": map[string]interface{}{
+							"url": "https://example.com/image.png",
+						},
+						"caption": []map[string]interface{}{
+							{
+								"type": "text",
+								"text": map[string]interface{}{
+									"content": "Alt text",
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:     "blockquote as callout",
+			markdown: "> This is a callout",
+			want: []map[string]interface{}{
+				{
+					"type": "callout",
+					"callout": map[string]interface{}{
+						"rich_text": []map[string]interface{}{
+							{
+								"type": "text",
+								"text": map[string]interface{}{
+									"content": "This is a callout",
+								},
+							},
+						},
+						"color": "gray_background",
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:     "divider block",
+			markdown: "---",
+			want: []map[string]interface{}{
+				{
+					"type":    "divider",
+					"divider": map[string]interface{}{},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:     "toggle block",
+			markdown: "<details>\n<summary>Click to expand</summary>\n</details>",
+			want: []map[string]interface{}{
+				{
+					"type": "toggle",
+					"toggle": map[string]interface{}{
+						"rich_text": []map[string]interface{}{
+							{
+								"type": "text",
+								"text": map[string]interface{}{
+									"content": "Click to expand",
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "nested list",
+			markdown: `- Item 1
+  - Nested item 1
+  - Nested item 2
+    - Deep nested item
+- Item 2`,
+			want: []map[string]interface{}{
+				{
+					"type": "bulleted_list_item",
+					"bulleted_list_item": map[string]interface{}{
+						"rich_text": []map[string]interface{}{
+							{
+								"type": "text",
+								"text": map[string]interface{}{
+									"content": "Item 1",
+								},
+							},
+						},
+					},
+				},
+				{
+					"type": "bulleted_list_item",
+					"bulleted_list_item": map[string]interface{}{
+						"rich_text": []map[string]interface{}{
+							{
+								"type": "text",
+								"text": map[string]interface{}{
+									"content": "  Nested item 1",
+								},
+							},
+						},
+					},
+				},
+				{
+					"type": "bulleted_list_item",
+					"bulleted_list_item": map[string]interface{}{
+						"rich_text": []map[string]interface{}{
+							{
+								"type": "text",
+								"text": map[string]interface{}{
+									"content": "  Nested item 2",
+								},
+							},
+						},
+					},
+				},
+				{
+					"type": "bulleted_list_item",
+					"bulleted_list_item": map[string]interface{}{
+						"rich_text": []map[string]interface{}{
+							{
+								"type": "text",
+								"text": map[string]interface{}{
+									"content": "    Deep nested item",
+								},
+							},
+						},
+					},
+				},
+				{
+					"type": "bulleted_list_item",
+					"bulleted_list_item": map[string]interface{}{
+						"rich_text": []map[string]interface{}{
+							{
+								"type": "text",
+								"text": map[string]interface{}{
+									"content": "Item 2",
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -605,6 +757,126 @@ func TestConverter_BlocksToMarkdown(t *testing.T) {
 				},
 			},
 			want:    "| Header 1 | Header 2 |\n| --- | --- |\n| Cell 1 | Cell 2 |",
+			wantErr: false,
+		},
+		{
+			name: "image block",
+			blocks: []notion.Block{
+				{
+					Type: "image",
+					Image: &notion.ImageBlock{
+						Type: "external",
+						External: &notion.ExternalFile{
+							URL: "https://example.com/image.png",
+						},
+						Caption: []notion.RichText{
+							{PlainText: "Test image"},
+						},
+					},
+				},
+			},
+			want:    "![Test image](https://example.com/image.png)",
+			wantErr: false,
+		},
+		{
+			name: "callout block",
+			blocks: []notion.Block{
+				{
+					Type: "callout",
+					Callout: &notion.CalloutBlock{
+						RichText: []notion.RichText{
+							{PlainText: "This is a callout"},
+						},
+						Icon: &notion.CalloutIcon{
+							Type:  "emoji",
+							Emoji: "💡",
+						},
+						Color: "gray_background",
+					},
+				},
+			},
+			want:    "> 💡 This is a callout",
+			wantErr: false,
+		},
+		{
+			name: "toggle block",
+			blocks: []notion.Block{
+				{
+					Type: "toggle",
+					Toggle: &notion.ToggleBlock{
+						RichText: []notion.RichText{
+							{PlainText: "Click to expand"},
+						},
+					},
+				},
+			},
+			want:    "<details>\n<summary>Click to expand</summary>\n\n</details>",
+			wantErr: false,
+		},
+		{
+			name: "bookmark block",
+			blocks: []notion.Block{
+				{
+					Type: "bookmark",
+					Bookmark: &notion.BookmarkBlock{
+						URL: "https://example.com",
+						Caption: []notion.RichText{
+							{PlainText: "Example website"},
+						},
+					},
+				},
+			},
+			want:    "[Example website](https://example.com)",
+			wantErr: false,
+		},
+		{
+			name: "divider block",
+			blocks: []notion.Block{
+				{
+					Type:    "divider",
+					Divider: &notion.DividerBlock{},
+				},
+			},
+			want:    "---",
+			wantErr: false,
+		},
+		{
+			name: "nested list blocks",
+			blocks: []notion.Block{
+				{
+					Type: "bulleted_list_item",
+					BulletedListItem: &notion.RichTextBlock{
+						RichText: []notion.RichText{
+							{PlainText: "Item 1"},
+						},
+					},
+				},
+				{
+					Type: "bulleted_list_item",
+					BulletedListItem: &notion.RichTextBlock{
+						RichText: []notion.RichText{
+							{PlainText: "  Nested item 1"},
+						},
+					},
+				},
+				{
+					Type: "bulleted_list_item",
+					BulletedListItem: &notion.RichTextBlock{
+						RichText: []notion.RichText{
+							{PlainText: "  Nested item 2"},
+						},
+					},
+				},
+				{
+					Type: "bulleted_list_item",
+					BulletedListItem: &notion.RichTextBlock{
+						RichText: []notion.RichText{
+							{PlainText: "Item 2"},
+						},
+					},
+				},
+			},
+			want:    "- Item 1\n-   Nested item 1\n-   Nested item 2\n- Item 2",
 			wantErr: false,
 		},
 	}

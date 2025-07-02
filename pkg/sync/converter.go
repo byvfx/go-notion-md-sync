@@ -2,6 +2,7 @@ package sync
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/byvfx/go-notion-md-sync/pkg/notion"
@@ -24,6 +25,9 @@ func NewConverter() Converter {
 }
 
 func (c *converter) MarkdownToBlocks(content string) ([]map[string]interface{}, error) {
+	// Pre-process content to extract math blocks and replace with placeholders
+	content, mathBlocks := c.extractMathBlocks(content)
+
 	// Parse markdown into AST with table extension
 	md := goldmark.New(
 		goldmark.WithExtensions(extension.Table),
@@ -50,10 +54,24 @@ func (c *converter) MarkdownToBlocks(content string) ([]map[string]interface{}, 
 
 		case ast.KindParagraph:
 			paragraph := n.(*ast.Paragraph)
-			text := extractTextFromNode(paragraph, source)
-			if strings.TrimSpace(text) != "" {
-				block := createParagraphBlock(text)
-				blocks = append(blocks, block)
+			// Check if paragraph contains only an image
+			if imageBlock := c.extractImageFromParagraph(paragraph, source); imageBlock != nil {
+				blocks = append(blocks, imageBlock)
+			} else {
+				text := extractTextFromNode(paragraph, source)
+				if strings.TrimSpace(text) != "" {
+					// Check if this is a math block placeholder
+					if strings.HasPrefix(text, "MATH_BLOCK_") {
+						index := strings.TrimPrefix(text, "MATH_BLOCK_")
+						if i := parseInt(index); i < len(mathBlocks) {
+							block := createEquationBlock(mathBlocks[i])
+							blocks = append(blocks, block)
+						}
+					} else {
+						block := createParagraphBlock(text)
+						blocks = append(blocks, block)
+					}
+				}
 			}
 			return ast.WalkSkipChildren, nil
 
@@ -75,8 +93,15 @@ func (c *converter) MarkdownToBlocks(content string) ([]map[string]interface{}, 
 			fencedCodeBlock := n.(*ast.FencedCodeBlock)
 			text := extractFencedCodeBlockContent(fencedCodeBlock, source)
 			language := extractLanguageFromFencedCodeBlock(fencedCodeBlock, source)
-			block := createCodeBlock(text, language)
-			blocks = append(blocks, block)
+
+			// Special handling for Mermaid diagrams - keep as code blocks but ensure proper language
+			if language == "mermaid" {
+				block := createCodeBlock(text, "mermaid")
+				blocks = append(blocks, block)
+			} else {
+				block := createCodeBlock(text, language)
+				blocks = append(blocks, block)
+			}
 			return ast.WalkSkipChildren, nil
 
 		case east.KindTable:
@@ -84,6 +109,38 @@ func (c *converter) MarkdownToBlocks(content string) ([]map[string]interface{}, 
 			tableBlocks := c.convertTableToBlocks(table, source)
 			blocks = append(blocks, tableBlocks...)
 			return ast.WalkSkipChildren, nil
+
+		case ast.KindBlockquote:
+			blockquote := n.(*ast.Blockquote)
+			text := extractTextFromNode(blockquote, source)
+			block := createCalloutBlock(text)
+			blocks = append(blocks, block)
+			return ast.WalkSkipChildren, nil
+
+		case ast.KindThematicBreak:
+			block := createDividerBlock()
+			blocks = append(blocks, block)
+			return ast.WalkSkipChildren, nil
+
+		case ast.KindHTMLBlock:
+			htmlBlock := n.(*ast.HTMLBlock)
+			if toggleBlock := c.extractToggleFromHTML(htmlBlock, source); toggleBlock != nil {
+				blocks = append(blocks, toggleBlock)
+				return ast.WalkSkipChildren, nil
+			}
+
+		default:
+			// Check for math blocks (display math)
+			if n.Kind().String() == "MathBlock" {
+				text := string(n.Text(source))
+				// Remove $$ delimiters if present
+				text = strings.TrimPrefix(text, "$$")
+				text = strings.TrimSuffix(text, "$$")
+				text = strings.TrimSpace(text)
+				block := createEquationBlock(text)
+				blocks = append(blocks, block)
+				return ast.WalkSkipChildren, nil
+			}
 		}
 
 		return ast.WalkContinue, nil
@@ -132,6 +189,21 @@ func (c *converter) BlocksToMarkdown(blocks []notion.Block) (string, error) {
 
 		case "table_row":
 			c.processTableRow(tableState, &block, i, blocks, &md)
+
+		case "image":
+			c.writeImage(&md, &block)
+
+		case "callout":
+			c.writeCallout(&md, &block)
+
+		case "toggle":
+			c.writeToggle(&md, &block)
+
+		case "bookmark":
+			c.writeBookmark(&md, &block)
+
+		case "equation":
+			c.writeEquation(&md, &block)
 		}
 	}
 
@@ -362,6 +434,103 @@ func createCodeBlock(text, language string) map[string]interface{} {
 	}
 }
 
+func createCalloutBlock(text string) map[string]interface{} {
+	// Extract emoji if present at the beginning of the text
+	emoji := ""
+	content := text
+
+	// Simple check for emoji at start (could be enhanced)
+	if len(text) > 0 {
+		// Check if text starts with common callout indicators
+		if strings.HasPrefix(text, "💡 ") || strings.HasPrefix(text, "⚠️ ") ||
+			strings.HasPrefix(text, "❗ ") || strings.HasPrefix(text, "📝 ") {
+			emoji = text[:strings.Index(text, " ")]
+			content = text[len(emoji)+1:]
+		}
+	}
+
+	calloutBlock := map[string]interface{}{
+		"type": "callout",
+		"callout": map[string]interface{}{
+			"rich_text": []map[string]interface{}{
+				{
+					"type": "text",
+					"text": map[string]interface{}{
+						"content": content,
+					},
+				},
+			},
+			"color": "gray_background",
+		},
+	}
+
+	if emoji != "" {
+		calloutBlock["callout"].(map[string]interface{})["icon"] = map[string]interface{}{
+			"type":  "emoji",
+			"emoji": emoji,
+		}
+	}
+
+	return calloutBlock
+}
+
+func createDividerBlock() map[string]interface{} {
+	return map[string]interface{}{
+		"type":    "divider",
+		"divider": map[string]interface{}{},
+	}
+}
+
+func createImageBlock(url, caption string) map[string]interface{} {
+	imageBlock := map[string]interface{}{
+		"type": "image",
+		"image": map[string]interface{}{
+			"type": "external",
+			"external": map[string]interface{}{
+				"url": url,
+			},
+		},
+	}
+
+	if caption != "" {
+		imageBlock["image"].(map[string]interface{})["caption"] = []map[string]interface{}{
+			{
+				"type": "text",
+				"text": map[string]interface{}{
+					"content": caption,
+				},
+			},
+		}
+	}
+
+	return imageBlock
+}
+
+func createToggleBlock(summary string) map[string]interface{} {
+	return map[string]interface{}{
+		"type": "toggle",
+		"toggle": map[string]interface{}{
+			"rich_text": []map[string]interface{}{
+				{
+					"type": "text",
+					"text": map[string]interface{}{
+						"content": summary,
+					},
+				},
+			},
+		},
+	}
+}
+
+func createEquationBlock(expression string) map[string]interface{} {
+	return map[string]interface{}{
+		"type": "equation",
+		"equation": map[string]interface{}{
+			"expression": expression,
+		},
+	}
+}
+
 func normalizeNotionLanguage(lang string) string {
 	// Map common language names to Notion's expected values
 	langMap := map[string]string{
@@ -411,15 +580,24 @@ func normalizeNotionLanguage(lang string) string {
 }
 
 func (c *converter) convertListToBlocks(list *ast.List, source []byte) []map[string]interface{} {
+	return c.convertListToBlocksWithDepth(list, source, 0)
+}
+
+func (c *converter) convertListToBlocksWithDepth(list *ast.List, source []byte, depth int) []map[string]interface{} {
 	var blocks []map[string]interface{}
 
 	for child := list.FirstChild(); child != nil; child = child.NextSibling() {
 		if listItem, ok := child.(*ast.ListItem); ok {
-			text := extractTextFromNode(listItem, source)
+			// Extract the direct text content of this list item (excluding nested lists)
+			text := c.extractListItemText(listItem, source)
+
 			blockType := "bulleted_list_item"
 			if list.IsOrdered() {
 				blockType = "numbered_list_item"
 			}
+
+			// Create indentation for nested lists by adding spaces
+			indent := strings.Repeat("  ", depth)
 
 			block := map[string]interface{}{
 				"type": blockType,
@@ -428,17 +606,53 @@ func (c *converter) convertListToBlocks(list *ast.List, source []byte) []map[str
 						{
 							"type": "text",
 							"text": map[string]interface{}{
-								"content": text,
+								"content": indent + text,
 							},
 						},
 					},
 				},
 			}
 			blocks = append(blocks, block)
+
+			// Process nested lists
+			for nestedChild := listItem.FirstChild(); nestedChild != nil; nestedChild = nestedChild.NextSibling() {
+				if nestedList, ok := nestedChild.(*ast.List); ok {
+					nestedBlocks := c.convertListToBlocksWithDepth(nestedList, source, depth+1)
+					blocks = append(blocks, nestedBlocks...)
+				}
+			}
 		}
 	}
 
 	return blocks
+}
+
+func (c *converter) extractListItemText(listItem *ast.ListItem, source []byte) string {
+	var text strings.Builder
+
+	// Walk through the list item and extract text, but skip nested lists
+	_ = ast.Walk(listItem, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+
+		// If we encounter a nested list, skip it entirely
+		if n.Kind() == ast.KindList && n != listItem {
+			return ast.WalkSkipChildren, nil
+		}
+
+		switch n.Kind() {
+		case ast.KindText:
+			textNode := n.(*ast.Text)
+			text.Write(textNode.Segment.Value(source))
+		case ast.KindString:
+			stringNode := n.(*ast.String)
+			text.Write(stringNode.Value)
+		}
+		return ast.WalkContinue, nil
+	})
+
+	return strings.TrimSpace(text.String())
 }
 
 func extractPlainTextFromRichText(richTexts []notion.RichText) string {
@@ -614,4 +828,144 @@ func (c *converter) convertTableRow(row *east.TableRow, source []byte) map[strin
 			"cells": cells,
 		},
 	}
+}
+
+func (c *converter) writeImage(md *strings.Builder, block *notion.Block) {
+	if block.Image != nil {
+		var url string
+		if block.Image.External != nil {
+			url = block.Image.External.URL
+		} else if block.Image.File != nil {
+			url = block.Image.File.URL
+		}
+
+		caption := extractPlainTextFromRichText(block.Image.Caption)
+		if caption != "" {
+			fmt.Fprintf(md, "![%s](%s)\n\n", caption, url)
+		} else {
+			fmt.Fprintf(md, "![](%s)\n\n", url)
+		}
+	}
+}
+
+func (c *converter) writeCallout(md *strings.Builder, block *notion.Block) {
+	if block.Callout != nil {
+		text := extractPlainTextFromRichText(block.Callout.RichText)
+		icon := ""
+		if block.Callout.Icon != nil && block.Callout.Icon.Emoji != "" {
+			icon = block.Callout.Icon.Emoji + " "
+		}
+
+		// Convert callout to blockquote with icon
+		fmt.Fprintf(md, "> %s%s\n\n", icon, text)
+	}
+}
+
+func (c *converter) writeToggle(md *strings.Builder, block *notion.Block) {
+	if block.Toggle != nil {
+		text := extractPlainTextFromRichText(block.Toggle.RichText)
+		// Use HTML details/summary for toggle functionality
+		md.WriteString("<details>\n<summary>" + text + "</summary>\n\n")
+		// Note: Child blocks would be added here if we supported nested blocks
+		md.WriteString("</details>\n\n")
+	}
+}
+
+func (c *converter) writeBookmark(md *strings.Builder, block *notion.Block) {
+	if block.Bookmark != nil {
+		caption := extractPlainTextFromRichText(block.Bookmark.Caption)
+		if caption != "" {
+			fmt.Fprintf(md, "[%s](%s)\n\n", caption, block.Bookmark.URL)
+		} else {
+			fmt.Fprintf(md, "<%s>\n\n", block.Bookmark.URL)
+		}
+	}
+}
+
+func (c *converter) writeEquation(md *strings.Builder, block *notion.Block) {
+	if block.Equation != nil {
+		fmt.Fprintf(md, "$$%s$$\n\n", block.Equation.Expression)
+	}
+}
+
+func (c *converter) extractImageFromParagraph(paragraph *ast.Paragraph, source []byte) map[string]interface{} {
+	// Check if paragraph contains only an image
+	if paragraph.ChildCount() == 1 {
+		if image, ok := paragraph.FirstChild().(*ast.Image); ok {
+			url := string(image.Destination)
+			caption := string(image.Title)
+
+			// If no title, try to extract alt text
+			if caption == "" && image.ChildCount() > 0 {
+				caption = extractTextFromNode(image, source)
+			}
+
+			return createImageBlock(url, caption)
+		}
+	}
+	return nil
+}
+
+func (c *converter) extractToggleFromHTML(htmlBlock *ast.HTMLBlock, source []byte) map[string]interface{} {
+	// Extract the HTML content
+	var htmlContent strings.Builder
+	for i := 0; i < htmlBlock.Lines().Len(); i++ {
+		line := htmlBlock.Lines().At(i)
+		htmlContent.Write(line.Value(source))
+	}
+
+	html := strings.TrimSpace(htmlContent.String())
+
+	// Check if it's a details/summary element
+	if strings.HasPrefix(html, "<details>") && strings.Contains(html, "<summary>") {
+		// Extract summary text (simple regex approach)
+		summaryStart := strings.Index(html, "<summary>") + 9
+		summaryEnd := strings.Index(html, "</summary>")
+
+		if summaryEnd > summaryStart {
+			summary := html[summaryStart:summaryEnd]
+			return createToggleBlock(summary)
+		}
+	}
+
+	return nil
+}
+
+// extractMathBlocks extracts $$...$$ math blocks from content and replaces them with placeholders
+func (c *converter) extractMathBlocks(content string) (string, []string) {
+	var mathBlocks []string
+	result := content
+
+	// Find all $$...$$ blocks
+	for {
+		start := strings.Index(result, "$$")
+		if start == -1 {
+			break
+		}
+
+		// Find the closing $$
+		end := strings.Index(result[start+2:], "$$")
+		if end == -1 {
+			break
+		}
+		end += start + 2 + 2 // Adjust for the offset and length of $$
+
+		// Extract the math content (without the $$ delimiters)
+		mathContent := result[start+2 : end-2]
+		mathBlocks = append(mathBlocks, strings.TrimSpace(mathContent))
+
+		// Replace with placeholder on its own line
+		placeholder := fmt.Sprintf("\n\nMATH_BLOCK_%d\n\n", len(mathBlocks)-1)
+		result = result[:start] + placeholder + result[end:]
+	}
+
+	return result, mathBlocks
+}
+
+// parseInt converts string to int, returns -1 if invalid
+func parseInt(s string) int {
+	if i, err := strconv.Atoi(s); err == nil {
+		return i
+	}
+	return -1
 }
