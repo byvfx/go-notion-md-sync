@@ -34,6 +34,7 @@ func init() {
 	rootCmd.AddCommand(pullCmd)
 	rootCmd.AddCommand(pushCmd)
 	rootCmd.AddCommand(watchCmd)
+	rootCmd.AddCommand(databaseCmd)
 }
 
 func printVerbose(format string, args ...interface{}) {
