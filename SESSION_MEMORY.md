@@ -1,6 +1,30 @@
 # SESSION_MEMORY.md - Recent Work and Context
 
-## Latest Release: v0.10.0 - Phase 2 Complete (July 2025)
+## Latest Release: v0.10.1 - Critical Bug Fix (July 2, 2025)
+
+### Bug Fix: Nested Page Pulling ✅
+- **Critical Issue**: Pull command failing to fetch nested sub-pages, causing timeouts
+- **Root Cause**: Infinite loop in `buildFilePathForPage` function safety check logic
+- **Solution**: Implemented proper cycle detection using `visited` map
+- **Impact**: Successfully tested with 3 main pages, each with 2 levels of nested sub-pages (9 total)
+- **Code Location**: `pkg/sync/engine.go` - `buildFilePathForPage()` method
+- **Directory Structure**: Now creates proper nested directories mirroring Notion hierarchy:
+  ```
+  docs/
+  ├── Sample Document 1.md
+  ├── Sample Document 1/
+  │   ├── sub page 1.md
+  │   └── sub page 1/
+  │       └── sub page 2.md
+  ```
+
+### Enhanced Safety Features ✅
+- **Cycle Detection**: Prevents infinite loops in complex page hierarchies
+- **Missing Parent Handling**: Graceful warnings for orphaned pages
+- **Proper Path Construction**: Accurate nested directory structure creation
+- **Timeout Prevention**: Eliminated blocking operations during recursive page fetching
+
+## Previous Release: v0.10.0 - Phase 2 Complete (July 2025)
 
 ### Extended Block Support ✅
 - **Images**: Full caption and external URL support

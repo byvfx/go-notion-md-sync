@@ -70,6 +70,20 @@ notion-md-sync/
 └── Makefile
 ```
 
+## v0.10.1 Bug Fix (Critical)
+
+### Nested Page Pulling Fix
+- **Critical Issue**: Pull command was failing to fetch nested sub-pages, causing timeouts
+- **Root Cause**: Infinite loop in `buildFilePathForPage` function's safety check logic
+- **Solution**: Implemented proper cycle detection using `visited` map for hierarchy traversal
+- **Impact**: Now supports deeply nested Notion page structures with proper directory mirroring
+
+### Enhanced Safety Features
+- **Cycle Detection**: Prevents infinite loops in complex page hierarchies
+- **Missing Parent Handling**: Graceful warnings for orphaned pages
+- **Proper Path Construction**: Accurate nested directory structure creation
+- **Timeout Prevention**: Eliminated blocking operations during recursive page fetching
+
 ## v0.10.0 Features (Phase 2 Complete)
 
 ### Extended Block Support
