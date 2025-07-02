@@ -55,10 +55,12 @@ mapping:
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	// Verify basic config loading works and check direction in one block
+	// Verify basic config loading works
 	if cfg == nil {
-		t.Fatal("Expected non-nil config")
-	} else if cfg.Sync.Direction != "push" {
+		t.Fatal("cfg is nil")
+	}
+
+	if cfg.Sync.Direction != "push" {
 		t.Errorf("Expected direction 'push', got '%s'", cfg.Sync.Direction)
 	}
 }
