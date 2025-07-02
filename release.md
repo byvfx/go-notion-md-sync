@@ -4,10 +4,11 @@ All release notes have been organized by version for easier navigation.
 
 ## Current Release
 
-- [v0.8.2 - Test Coverage & Code Quality Foundation](docs/releases/v0.8.2.md) - Major milestone in code quality with 74% test coverage and A+ Go Report Card
+- [v0.10.0 - Feature Completeness (Phase 2)](docs/releases/v0.10.0.md) - Extended Notion blocks, LaTeX math, Mermaid diagrams, and CSV/database integration
 
 ## Previous Releases
 
+- [v0.8.2 - Test Coverage & Code Quality Foundation](docs/releases/v0.8.2.md) - Major milestone in code quality with 74% test coverage and A+ Go Report Card
 - [v0.8.1 - Watch Command Testing & Reliability Improvements](docs/releases/v0.8.1.md) - Comprehensive watch command tests and reliability improvements
 - [v0.8.0 - Table Support & Enhanced Pull Commands](docs/releases/v0.8.0.md) - Full table support and single file pull
 - [v0.7.0 - Enhanced User Experience & Visibility](docs/releases/v0.7.0.md) - Verify command and enhanced pull visibility
@@ -21,12 +22,12 @@ All release notes have been organized by version for easier navigation.
 
 ## Release Highlights
 
-### Latest Features (v0.8.2)
-- 🧪 **Comprehensive Test Coverage**: 74% overall coverage with critical packages fully tested
-- 📊 **Production-Ready Quality**: A+ Go Report Card (100% across all categories)
-- 🔧 **Enhanced Code Quality**: Reduced cyclomatic complexity and improved maintainability
-- ✅ **Robust Testing Infrastructure**: Mock-based testing with proper error simulation
-- 🎯 **Foundation for Rapid Development**: Confident feature development with test safety net
+### Latest Features (v0.10.0)
+- 🖼️ **Extended Block Support**: Images, callouts, toggles, bookmarks, dividers
+- 🧮 **LaTeX Math Equations**: Full support for mathematical expressions with `$$` blocks
+- 📊 **Mermaid Diagrams**: Preserve and sync diagram code blocks
+- 🗄️ **CSV/Database Integration**: Export/import Notion databases to/from CSV
+- 🎨 **Enhanced Markdown**: Advanced formatting with proper metadata handling
 
 ### Core Features
 - 🔄 Bidirectional sync between markdown and Notion

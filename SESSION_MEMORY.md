@@ -1,5 +1,41 @@
 # SESSION_MEMORY.md - Recent Work and Context
 
+## Latest Release: v0.10.0 - Phase 2 Complete (July 2025)
+
+### Extended Block Support ✅
+- **Images**: Full caption and external URL support
+- **Callouts**: Blockquotes with emoji prefixes → Notion callout blocks
+- **Toggles**: HTML details/summary → collapsible sections
+- **Bookmarks**: Link blocks with rich preview
+- **Dividers**: Horizontal rules (`---`)
+- **Nested Lists**: Unlimited depth support
+
+### LaTeX Math Equations ✅
+- **Implementation**: Custom math block extraction with placeholder system
+- **Pre-processing**: Extract `$$` blocks before AST parsing
+- **Testing**: Validated with 3 real examples from user's Notion page:
+  - Quadratic Formula
+  - Maxwell's Equations (multi-line aligned)
+  - Einstein's Field Equations
+- **Code Location**: `pkg/sync/converter.go` - `extractMathBlocks()` method
+
+### CSV/Database Integration ✅
+- **New Command**: `notion-md-sync database [export|import|create]`
+- **DatabaseSync Interface**: Full export/import functionality
+- **Smart Type Inference**: Automatic property type detection
+- **Custom Types**: `NotionDate` for flexible date parsing
+- **Testing**: Round-trip testing with Product Inventory database
+- **Code Locations**:
+  - `pkg/sync/database.go`: DatabaseSync implementation
+  - `pkg/cli/database.go`: CLI commands
+  - `pkg/notion/types.go`: Database types and NotionDate
+
+### Technical Enhancements
+- Removed goldmark-mathjax dependency (simpler implementation)
+- Added strconv import for number parsing
+- Enhanced converter with pre-processing pipeline
+- Improved AST walking for better block detection
+
 ## Recent Features Implemented (v0.8.0)
 
 ### 1. Full Table Support
@@ -132,10 +168,11 @@ go test ./pkg/sync -v
 - Conflict resolution improvements
 
 ## Session Notes
-- Last working on: Speed testing completed, all v0.7.0 features implemented
-- Documentation: Fully updated for v0.7.0
-- Tests: All passing
-- Performance: Good, under 2s for most operations
+- Last working on: Phase 2 Feature Completeness - All features implemented and tested
+- Documentation: Fully updated for v0.10.0 release
+- Tests: All passing (cleaned up temporary test files)
+- Performance: Maintained fast speeds despite new complexity
+- Next Phase: Performance Improvements (Phase 3)
 
 ---
 *This file complements CLAUDE.md with session-specific context and recent work*

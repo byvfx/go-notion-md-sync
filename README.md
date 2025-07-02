@@ -25,6 +25,11 @@ A powerful CLI tool for synchronizing markdown files with Notion pages. Built wi
 - 🏷️ **Parent Page Context**: Status command shows current Notion parent page title
 - 📋 **Table Support**: Full bidirectional sync of Notion tables to markdown tables
 - 🎯 **Single File Pull**: Pull specific pages by filename with `--page` flag
+- 🖼️ **Extended Block Support**: Images, callouts, toggles, bookmarks, dividers, and more
+- 🧮 **LaTeX Math Equations**: Full support for mathematical expressions with `$$` blocks
+- 📊 **Mermaid Diagrams**: Preserve and sync Mermaid diagram code blocks
+- 🗄️ **CSV/Database Integration**: Export Notion databases to CSV and import CSV to databases
+- 🎨 **Enhanced Markdown**: Advanced formatting with proper caption and metadata handling
 
 ## Quick Start
 
@@ -272,6 +277,20 @@ Work with individual files instead of entire directories:
 
 # Sync a specific file (if it has notion_id in frontmatter, it can be pulled)
 ./bin/notion-md-sync sync pull --file docs/existing-doc.md
+```
+
+#### Database Operations
+Export Notion databases to CSV or import CSV files to create/update databases:
+
+```bash
+# Export a Notion database to CSV
+./bin/notion-md-sync database export DATABASE_ID output.csv
+
+# Import CSV to create a new database
+./bin/notion-md-sync database create input.csv PARENT_PAGE_ID
+
+# Import CSV to update existing database
+./bin/notion-md-sync database import input.csv DATABASE_ID
 
 # Pull a specific page to a file
 ./bin/notion-md-sync pull --page-id PAGE_ID --output docs/new-doc.md
@@ -316,6 +335,38 @@ export NOTION_MD_SYNC_NOTION_TOKEN="your_token"
 export NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID="your_page_id"
 ./bin/notion-md-sync pull --verbose
 ```
+
+## Enhanced Markdown Support
+
+### LaTeX Math Equations
+The tool supports LaTeX math equations using `$$` delimiters:
+
+```markdown
+$$x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$$
+
+$$\begin{aligned}
+\nabla \times \vec{E} &= -\frac{\partial \vec{B}}{\partial t} \\
+\nabla \times \vec{B} &= \mu_0 \vec{J} + \mu_0 \varepsilon_0 \frac{\partial \vec{E}}{\partial t}
+\end{aligned}$$
+```
+
+### Mermaid Diagrams
+Mermaid diagrams are preserved as code blocks:
+
+```markdown
+```mermaid
+graph TD
+    A[Start] --> B{Decision}
+    B -->|Yes| C[Process 1]
+    B -->|No| D[Process 2]
+```
+
+### Extended Block Types
+- **Images**: `![caption](url)` with full caption support
+- **Callouts**: Blockquotes with emoji icons (`> 💡 Note: ...`)
+- **Toggles**: Collapsible sections (via HTML details/summary)
+- **Bookmarks**: Links with rich previews
+- **Dividers**: Horizontal rules (`---`)
 
 ## Markdown Format
 
