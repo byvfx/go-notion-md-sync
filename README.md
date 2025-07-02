@@ -30,6 +30,7 @@ A powerful CLI tool for synchronizing markdown files with Notion pages. Built wi
 - 📊 **Mermaid Diagrams**: Preserve and sync Mermaid diagram code blocks
 - 🗄️ **CSV/Database Integration**: Export Notion databases to CSV and import CSV to databases
 - 🎨 **Enhanced Markdown**: Advanced formatting with proper caption and metadata handling
+- 📁 **Nested Page Support**: Pull command creates proper directory hierarchy mirroring Notion page structure
 
 ## Quick Start
 
@@ -210,6 +211,22 @@ Changes staged for sync:
 ./bin/notion-md-sync pull --dry-run --verbose
 ```
 
+**Nested Page Support**: The pull command automatically creates directory hierarchies that mirror your Notion page structure:
+
+```
+# Example: Notion workspace with nested pages
+docs/
+├── Main Document.md          # Top-level page
+├── Main Document/            # Sub-pages directory
+│   ├── Sub Page 1.md         # First sub-page
+│   └── Sub Page 1/           # Nested sub-pages
+│       └── Sub Page 2.md     # Deeply nested page
+└── Another Document/
+    └── Nested Content.md
+```
+
+This maintains your Notion workspace organization in your local file system.
+
 #### Push Markdown to Notion
 ```bash
 # Push a specific file
@@ -334,6 +351,23 @@ make source-env
 export NOTION_MD_SYNC_NOTION_TOKEN="your_token"
 export NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID="your_page_id"
 ./bin/notion-md-sync pull --verbose
+```
+
+#### Shell Completion
+Enable command autocompletion for your shell:
+
+```bash
+# Bash
+./bin/notion-md-sync completion bash > /etc/bash_completion.d/notion-md-sync
+
+# Zsh
+./bin/notion-md-sync completion zsh > ~/.zsh/completions/_notion-md-sync
+
+# Fish
+./bin/notion-md-sync completion fish > ~/.config/fish/completions/notion-md-sync.fish
+
+# PowerShell
+./bin/notion-md-sync completion powershell > notion-md-sync.ps1
 ```
 
 ## Enhanced Markdown Support
@@ -546,6 +580,17 @@ cat docs/sales-report.md
 - Verify the file isn't matching an excluded pattern
 - Use `--verbose` flag to see detailed output
 
+#### Nested pages not pulling correctly
+- Ensure your Notion integration has access to all sub-pages
+- Check that parent-child relationships are properly set in Notion
+- Use `--verbose` flag to see page hierarchy detection
+
+#### Database operations failing
+- Verify the database ID (not page ID) is correct
+- Ensure integration has database access permissions
+- Check CSV format matches expected column types
+- For import operations, verify parent page exists and is accessible
+
 ### Getting Help
 
 ```bash
@@ -565,6 +610,7 @@ make validate
 ./bin/notion-md-sync watch --help
 ./bin/notion-md-sync status --help
 ./bin/notion-md-sync verify --help
+./bin/notion-md-sync database --help
 ```
 
 ## Development
