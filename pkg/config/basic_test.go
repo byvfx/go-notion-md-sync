@@ -56,11 +56,11 @@ mapping:
 	}
 
 	// Verify basic config loading works
-	if cfg == nil {
+	if cfg != nil {
+		if cfg.Sync.Direction != "push" {
+			t.Errorf("Expected direction 'push', got '%s'", cfg.Sync.Direction)
+		}
+	} else {
 		t.Fatal("cfg is nil")
-	}
-
-	if cfg.Sync.Direction != "push" {
-		t.Errorf("Expected direction 'push', got '%s'", cfg.Sync.Direction)
 	}
 }
