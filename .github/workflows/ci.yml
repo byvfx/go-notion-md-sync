@@ -19,7 +19,7 @@ jobs:
         go-version: '1.23'
 
     - name: Clear Go mod cache
-      run: rm -rf ~/go/pkg/mod
+      run: go clean -modcache
 
     - name: Cache Go modules
       uses: actions/cache@v4
