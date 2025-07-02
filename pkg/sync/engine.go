@@ -168,22 +168,38 @@ func (e *engine) syncAllMarkdownToNotion(ctx context.Context) error {
 }
 
 func (e *engine) syncAllNotionToMarkdown(ctx context.Context) error {
-	// Get all child pages from parent
-	pages, err := e.notion.GetChildPages(ctx, e.config.Notion.ParentPageID)
+	// Get all descendant pages (including nested sub-pages)
+	pages, err := e.notion.GetAllDescendantPages(ctx, e.config.Notion.ParentPageID)
 	if err != nil {
-		return fmt.Errorf("failed to get child pages: %w", err)
+		return fmt.Errorf("failed to get descendant pages: %w", err)
 	}
 
-	fmt.Printf("Found %d pages under parent %s\n", len(pages), e.config.Notion.ParentPageID)
+	fmt.Printf("Found %d pages under parent %s (including sub-pages)\n", len(pages), e.config.Notion.ParentPageID)
 	fmt.Println()
+
+	// Build a map of page IDs to their parent IDs for path construction
+	pageParentMap := make(map[string]string)
+	for _, page := range pages {
+		if page.Parent.Type == "page_id" {
+			pageParentMap[page.ID] = page.Parent.PageID
+		}
+	}
 
 	for i, page := range pages {
 		title := e.extractTitleFromPage(&page)
-		filePath := filepath.Join(e.config.Directories.MarkdownRoot, title+".md")
+		
+		// Build the file path including parent directories
+		filePath := e.buildFilePathForPage(&page, title, pageParentMap, pages)
 
 		fmt.Printf("[%d/%d] Pulling page: %s\n", i+1, len(pages), title)
 		fmt.Printf("  Notion ID: %s\n", page.ID)
 		fmt.Printf("  Saving to: %s\n", filePath)
+		
+		// Create parent directory if needed
+		dir := filepath.Dir(filePath)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %w", dir, err)
+		}
 
 		if err := e.SyncNotionToFile(ctx, page.ID, filePath); err != nil {
 			return fmt.Errorf("failed to sync page %s: %w", page.ID, err)
@@ -196,10 +212,10 @@ func (e *engine) syncAllNotionToMarkdown(ctx context.Context) error {
 }
 
 func (e *engine) syncBidirectional(ctx context.Context) error {
-	// Get all child pages from Notion
-	pages, err := e.notion.GetChildPages(ctx, e.config.Notion.ParentPageID)
+	// Get all descendant pages from Notion (including sub-pages)
+	pages, err := e.notion.GetAllDescendantPages(ctx, e.config.Notion.ParentPageID)
 	if err != nil {
-		return fmt.Errorf("failed to get child pages: %w", err)
+		return fmt.Errorf("failed to get descendant pages: %w", err)
 	}
 
 	// Check each file for conflicts
@@ -307,6 +323,56 @@ func (e *engine) syncFileWithConflictDetection(ctx context.Context, filePath str
 }
 
 // Helper functions
+
+// buildFilePathForPage constructs the file path for a page, including nested directory structure
+func (e *engine) buildFilePathForPage(page *notion.Page, title string, pageParentMap map[string]string, allPages []notion.Page) string {
+	// Build the path from root to this page
+	var pathParts []string
+	
+	// Traverse up the parent chain
+	currentPageID := page.ID
+	visited := make(map[string]bool) // Track visited pages to prevent infinite loops
+	
+	for {
+		parentID, hasParent := pageParentMap[currentPageID]
+		if !hasParent || parentID == e.config.Notion.ParentPageID {
+			// Reached the root parent or no parent found
+			break
+		}
+		
+		// Safety check to prevent infinite loops
+		if visited[currentPageID] {
+			fmt.Printf("Warning: cycle detected in page hierarchy for page %s\n", currentPageID)
+			break
+		}
+		visited[currentPageID] = true
+		
+		// Find the parent page to get its title
+		parentFound := false
+		for _, p := range allPages {
+			if p.ID == parentID {
+				parentTitle := e.extractTitleFromPage(&p)
+				pathParts = append([]string{parentTitle}, pathParts...)
+				currentPageID = parentID
+				parentFound = true
+				break
+			}
+		}
+		
+		// If we couldn't find the parent page, break to avoid infinite loop
+		if !parentFound {
+			fmt.Printf("Warning: parent page %s not found in page list\n", parentID)
+			break
+		}
+	}
+	
+	// Add the current page's filename
+	pathParts = append(pathParts, title+".md")
+	
+	// Construct the full path
+	fullPath := filepath.Join(e.config.Directories.MarkdownRoot, filepath.Join(pathParts...))
+	return fullPath
+}
 
 func (e *engine) createNotionPage(ctx context.Context, title string, blocks []map[string]interface{}) (string, error) {
 	properties := map[string]interface{}{

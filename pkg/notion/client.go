@@ -25,6 +25,7 @@ type Client interface {
 	RecreatePageWithBlocks(ctx context.Context, parentID string, properties map[string]interface{}, blocks []map[string]interface{}) (*Page, error)
 	SearchPages(ctx context.Context, query string) ([]Page, error)
 	GetChildPages(ctx context.Context, parentID string) ([]Page, error)
+	GetAllDescendantPages(ctx context.Context, parentID string) ([]Page, error)
 
 	// Database methods
 	GetDatabase(ctx context.Context, databaseID string) (*Database, error)
@@ -374,6 +375,32 @@ func (c *client) GetChildPages(ctx context.Context, parentID string) ([]Page, er
 	}
 
 	return pages, nil
+}
+
+func (c *client) GetAllDescendantPages(ctx context.Context, parentID string) ([]Page, error) {
+	var allPages []Page
+	
+	// Get direct children first
+	directChildren, err := c.GetChildPages(ctx, parentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get child pages: %w", err)
+	}
+	
+	// Add direct children to results
+	allPages = append(allPages, directChildren...)
+	
+	// Recursively get children of each child page
+	for _, page := range directChildren {
+		descendants, err := c.GetAllDescendantPages(ctx, page.ID)
+		if err != nil {
+			// Log error but continue with other pages
+			fmt.Printf("Warning: failed to get descendants of page %s: %v\n", page.ID, err)
+			continue
+		}
+		allPages = append(allPages, descendants...)
+	}
+	
+	return allPages, nil
 }
 
 // Database methods

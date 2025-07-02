@@ -17,11 +17,12 @@ import (
 
 // Mock implementations for testing
 type mockNotionClient struct {
-	getPageFunc       func(ctx context.Context, pageID string) (*notion.Page, error)
-	getPageBlocksFunc func(ctx context.Context, pageID string) ([]notion.Block, error)
-	createPageFunc    func(ctx context.Context, parentID string, properties map[string]interface{}) (*notion.Page, error)
-	updatePageFunc    func(ctx context.Context, pageID string, blocks []map[string]interface{}) error
-	getChildPagesFunc func(ctx context.Context, parentID string) ([]notion.Page, error)
+	getPageFunc               func(ctx context.Context, pageID string) (*notion.Page, error)
+	getPageBlocksFunc         func(ctx context.Context, pageID string) ([]notion.Block, error)
+	createPageFunc            func(ctx context.Context, parentID string, properties map[string]interface{}) (*notion.Page, error)
+	updatePageFunc            func(ctx context.Context, pageID string, blocks []map[string]interface{}) error
+	getChildPagesFunc         func(ctx context.Context, parentID string) ([]notion.Page, error)
+	getAllDescendantPagesFunc func(ctx context.Context, parentID string) ([]notion.Page, error)
 }
 
 func (m *mockNotionClient) GetPage(ctx context.Context, pageID string) (*notion.Page, error) {
@@ -67,6 +68,13 @@ func (m *mockNotionClient) SearchPages(ctx context.Context, query string) ([]not
 func (m *mockNotionClient) GetChildPages(ctx context.Context, parentID string) ([]notion.Page, error) {
 	if m.getChildPagesFunc != nil {
 		return m.getChildPagesFunc(ctx, parentID)
+	}
+	return []notion.Page{}, nil
+}
+
+func (m *mockNotionClient) GetAllDescendantPages(ctx context.Context, parentID string) ([]notion.Page, error) {
+	if m.getAllDescendantPagesFunc != nil {
+		return m.getAllDescendantPagesFunc(ctx, parentID)
 	}
 	return []notion.Page{}, nil
 }
