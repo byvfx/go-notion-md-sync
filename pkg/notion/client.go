@@ -25,6 +25,13 @@ type Client interface {
 	RecreatePageWithBlocks(ctx context.Context, parentID string, properties map[string]interface{}, blocks []map[string]interface{}) (*Page, error)
 	SearchPages(ctx context.Context, query string) ([]Page, error)
 	GetChildPages(ctx context.Context, parentID string) ([]Page, error)
+
+	// Database methods
+	GetDatabase(ctx context.Context, databaseID string) (*Database, error)
+	QueryDatabase(ctx context.Context, databaseID string, request *DatabaseQueryRequest) (*DatabaseQueryResponse, error)
+	CreateDatabase(ctx context.Context, request *CreateDatabaseRequest) (*Database, error)
+	CreateDatabaseRow(ctx context.Context, databaseID string, properties map[string]PropertyValue) (*DatabaseRow, error)
+	UpdateDatabaseRow(ctx context.Context, pageID string, properties map[string]PropertyValue) (*DatabaseRow, error)
 }
 
 type client struct {
@@ -367,4 +374,119 @@ func (c *client) GetChildPages(ctx context.Context, parentID string) ([]Page, er
 	}
 
 	return pages, nil
+}
+
+// Database methods
+
+func (c *client) GetDatabase(ctx context.Context, databaseID string) (*Database, error) {
+	endpoint := fmt.Sprintf("/databases/%s", databaseID)
+	resp, err := c.doRequest(ctx, "GET", endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get database: %w", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	var database Database
+	if err := json.NewDecoder(resp.Body).Decode(&database); err != nil {
+		return nil, fmt.Errorf("failed to decode database response: %w", err)
+	}
+
+	return &database, nil
+}
+
+func (c *client) QueryDatabase(ctx context.Context, databaseID string, request *DatabaseQueryRequest) (*DatabaseQueryResponse, error) {
+	endpoint := fmt.Sprintf("/databases/%s/query", databaseID)
+	resp, err := c.doRequest(ctx, "POST", endpoint, request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query database: %w", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	var queryResp DatabaseQueryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&queryResp); err != nil {
+		return nil, fmt.Errorf("failed to decode query response: %w", err)
+	}
+
+	return &queryResp, nil
+}
+
+func (c *client) CreateDatabase(ctx context.Context, request *CreateDatabaseRequest) (*Database, error) {
+	endpoint := "/databases"
+	resp, err := c.doRequest(ctx, "POST", endpoint, request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create database: %w", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	var database Database
+	if err := json.NewDecoder(resp.Body).Decode(&database); err != nil {
+		return nil, fmt.Errorf("failed to decode create database response: %w", err)
+	}
+
+	return &database, nil
+}
+
+func (c *client) CreateDatabaseRow(ctx context.Context, databaseID string, properties map[string]PropertyValue) (*DatabaseRow, error) {
+	endpoint := "/pages"
+
+	payload := map[string]interface{}{
+		"parent": map[string]interface{}{
+			"database_id": databaseID,
+		},
+		"properties": properties,
+	}
+
+	resp, err := c.doRequest(ctx, "POST", endpoint, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create database row: %w", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	var row DatabaseRow
+	if err := json.NewDecoder(resp.Body).Decode(&row); err != nil {
+		return nil, fmt.Errorf("failed to decode create row response: %w", err)
+	}
+
+	return &row, nil
+}
+
+func (c *client) UpdateDatabaseRow(ctx context.Context, pageID string, properties map[string]PropertyValue) (*DatabaseRow, error) {
+	endpoint := fmt.Sprintf("/pages/%s", pageID)
+
+	payload := map[string]interface{}{
+		"properties": properties,
+	}
+
+	resp, err := c.doRequest(ctx, "PATCH", endpoint, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update database row: %w", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	var row DatabaseRow
+	if err := json.NewDecoder(resp.Body).Decode(&row); err != nil {
+		return nil, fmt.Errorf("failed to decode update row response: %w", err)
+	}
+
+	return &row, nil
 }
