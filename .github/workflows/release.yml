@@ -85,7 +85,7 @@ jobs:
       id: notes
       run: |
         TAG_NAME=${GITHUB_REF##*/}
-        FILE="releasenotes/${TAG_NAME}.md"
+        FILE="docs/releases/${TAG_NAME}.md"
         echo "Looking for release notes at $FILE"
         if [ -f "$FILE" ]; then
           CONTENT=$(cat "$FILE")
