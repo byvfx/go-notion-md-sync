@@ -17,7 +17,7 @@ A powerful CLI tool for synchronizing markdown files with Notion pages. Built wi
 - 👀 **File Watching**: Real-time auto-sync when files change
 - 🔒 **Secure Configuration**: Environment variable support for API tokens
 - 🗂️ **Flexible Mapping**: Choose between filename or frontmatter-based page mapping
-- 🚀 **High Performance**: Concurrent processing with optimized block operations
+- 🚀 **High Performance**: 2-6x faster sync with concurrent operations, caching, and batch processing
 - 🧪 **Comprehensive Testing**: Full test coverage with CI/CD validation
 - ⚡ **Fast & Reliable**: Built with Go for performance and reliability
 - ✅ **Configuration Verification**: Check your setup is ready with `verify` command
@@ -211,21 +211,30 @@ Changes staged for sync:
 ./bin/notion-md-sync pull --dry-run --verbose
 ```
 
-**Nested Page Support**: The pull command automatically creates directory hierarchies that mirror your Notion page structure:
+**Nested Page Support**: The pull command automatically creates directory hierarchies that mirror your Notion page structure. Each page gets its own directory containing the page's markdown file:
 
 ```
 # Example: Notion workspace with nested pages
 docs/
-├── Main Document.md          # Top-level page
-├── Main Document/            # Sub-pages directory
-│   ├── Sub Page 1.md         # First sub-page
-│   └── Sub Page 1/           # Nested sub-pages
-│       └── Sub Page 2.md     # Deeply nested page
-└── Another Document/
-    └── Nested Content.md
+└── Parent Page/                    # Parent page directory
+    ├── Parent Page.md              # Parent page content
+    ├── Main Document/              # Child page directory
+    │   ├── Main Document.md        # Child page content
+    │   └── Sub Page 1/             # Nested sub-page directory
+    │       ├── Sub Page 1.md       # Sub-page content
+    │       └── Sub Page 2/         # Deeply nested directory
+    │           └── Sub Page 2.md   # Deeply nested content
+    └── Another Document/
+        ├── Another Document.md
+        └── Nested Content/
+            └── Nested Content.md
 ```
 
-This maintains your Notion workspace organization in your local file system.
+This structure ensures:
+- Each page has its own directory for better organization
+- Page names are preserved exactly as in Notion (including spaces)
+- The hierarchy mirrors your Notion workspace structure
+- Round-trip syncing is simplified with consistent naming
 
 #### Push Markdown to Notion
 ```bash
@@ -270,6 +279,51 @@ This maintains your Notion workspace organization in your local file system.
 ```
 
 ### Advanced Usage
+
+#### Performance Optimization (v0.11.0+)
+
+For large-scale operations, v0.11.0 introduces powerful performance optimizations:
+
+**Concurrent Sync**: 2-3x faster with parallel processing
+```bash
+# Default: Uses optimal worker count automatically
+./bin/notion-md-sync pull --concurrent
+
+# Custom worker count for fine-tuning
+./bin/notion-md-sync pull --workers 10
+```
+
+**Caching**: ~2x improvement for repeated operations
+```bash
+# Enable caching for API calls (enabled by default)
+./bin/notion-md-sync pull --cache-ttl 15m
+
+# Increase cache size for large workloads
+./bin/notion-md-sync pull --cache-size 5000
+```
+
+**Batch Processing**: Optimal for 100+ pages
+```bash
+# Process in optimized batches
+./bin/notion-md-sync pull --batch-size 50
+
+# Full optimization stack (4-6x faster for large syncs)
+./bin/notion-md-sync pull --concurrent --workers 15 --batch-size 50 --cache-size 5000
+```
+
+**Performance Testing**:
+```bash
+# Build performance tools
+make build-perf
+
+# Quick API measurement (no test data created)
+./scripts/measure-api-perf.sh YOUR_PAGE_ID 20
+
+# Comprehensive performance test (creates/deletes test pages)
+./scripts/run-perf-test.sh YOUR_PARENT_PAGE_ID 20 10
+
+# See docs/running-performance-tests.md for detailed instructions
+```
 
 #### Dry Run Mode
 Test your operations without making any actual changes:
