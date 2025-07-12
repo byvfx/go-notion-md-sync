@@ -7,6 +7,14 @@ BINARY_NAME=notion-md-sync
 build:
 	go build -o bin/$(BINARY_NAME) ./cmd/notion-md-sync
 
+# Build performance testing tools
+build-perf:
+	go build -o bin/measure-perf ./cmd/measure-perf
+	go build -o bin/perf-test ./cmd/perf-test
+
+# Build all binaries
+build-all: build build-perf
+
 # Run tests
 test:
 	go test -v ./...
