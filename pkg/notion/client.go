@@ -379,16 +379,16 @@ func (c *client) GetChildPages(ctx context.Context, parentID string) ([]Page, er
 
 func (c *client) GetAllDescendantPages(ctx context.Context, parentID string) ([]Page, error) {
 	var allPages []Page
-	
+
 	// Get direct children first
 	directChildren, err := c.GetChildPages(ctx, parentID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get child pages: %w", err)
 	}
-	
+
 	// Add direct children to results
 	allPages = append(allPages, directChildren...)
-	
+
 	// Recursively get children of each child page
 	for _, page := range directChildren {
 		descendants, err := c.GetAllDescendantPages(ctx, page.ID)
@@ -399,7 +399,7 @@ func (c *client) GetAllDescendantPages(ctx context.Context, parentID string) ([]
 		}
 		allPages = append(allPages, descendants...)
 	}
-	
+
 	return allPages, nil
 }
 
