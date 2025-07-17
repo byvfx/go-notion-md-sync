@@ -50,6 +50,16 @@ notion-md-sync/
 │   ├── watcher/                  # File system monitoring
 │   │   ├── watcher.go
 │   │   └── watcher_test.go
+│   ├── tui/                      # Terminal User Interface
+│   │   ├── model.go             # Main TUI application model
+│   │   ├── unified.go           # Split-pane unified view
+│   │   ├── filelist.go          # File browser component
+│   │   ├── syncstatus.go        # Sync status component
+│   │   ├── dashboard.go         # Dashboard component
+│   │   ├── config.go            # Configuration component
+│   │   ├── search.go            # Search component
+│   │   ├── conflict.go          # Conflict resolution component
+│   │   └── *_test.go            # Comprehensive test suite
 │   └── cli/                      # Command line interface
 │       ├── root.go
 │       ├── sync.go
@@ -59,6 +69,7 @@ notion-md-sync/
 │       ├── reset.go
 │       ├── status.go
 │       ├── watch.go
+│       ├── tui.go               # TUI command
 │       └── database.go          # Database export/import commands
 ├── internal/                     # Private application code
 │   └── util/                     # Internal utilities
@@ -69,6 +80,34 @@ notion-md-sync/
 ├── README.md
 └── Makefile
 ```
+
+## v0.12.0 Terminal User Interface (Phase 4 Complete)
+
+### TUI Implementation with Bubble Tea
+- **New Package**: `pkg/tui` with comprehensive terminal UI components
+- **Framework**: Built using Bubble Tea for robust cross-platform UI
+- **Architecture**: Proper Model-View-Update (MVU) pattern implementation
+- **Split-Pane Design**: File browser and sync status side-by-side interface
+
+### TUI Components
+- **Unified View**: Main split-pane interface matching the roadmap mockup
+- **File Browser**: Interactive file listing with sync status indicators
+- **Sync Status**: Real-time operation monitoring with progress display
+- **Navigation**: Full keyboard navigation with tab switching between panes
+- **Professional Design**: Clean straight borders and focused pane highlighting
+
+### TUI Features
+- **Interactive Selection**: Visual file selection with space/enter navigation
+- **Status Indicators**: File status icons (synced, modified, error, pending, conflict)
+- **Real-time Updates**: Live sync progress with elapsed time tracking
+- **Cross-Platform**: Works on Windows, macOS, and Linux terminals
+- **Responsive Layout**: Adapts to terminal size changes
+
+### TUI Usage
+- **Command**: `notion-md-sync tui`
+- **Navigation**: Tab (switch panes), Arrow keys (navigate), Space (select), 's' (sync), 'q' (quit)
+- **Visual Feedback**: Colored borders for focused panes, selection indicators
+- **Help Integration**: Keyboard shortcuts displayed in footer
 
 ## v0.11.0 Performance Improvements (Phase 3 Complete)
 

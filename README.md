@@ -10,27 +10,28 @@ A powerful CLI tool for synchronizing markdown files with Notion pages. Built wi
 
 ## Features
 
-- 🔄 **Bidirectional Sync**: Push markdown to Notion or pull Notion pages to markdown
-- 🎯 **Git-like Staging**: Stage files for sync with `add`, `status`, and `reset` commands
-- 📝 **Frontmatter Support**: Automatic metadata management with YAML frontmatter
-- 💾 **Smart Change Detection**: Hybrid timestamp and content-based change tracking
-- 👀 **File Watching**: Real-time auto-sync when files change
-- 🔒 **Secure Configuration**: Environment variable support for API tokens
-- 🗂️ **Flexible Mapping**: Choose between filename or frontmatter-based page mapping
-- 🚀 **High Performance**: 2-6x faster sync with concurrent operations, caching, and batch processing
-- 🧪 **Comprehensive Testing**: Full test coverage with CI/CD validation
-- ⚡ **Fast & Reliable**: Built with Go for performance and reliability
-- ✅ **Configuration Verification**: Check your setup is ready with `verify` command
-- 📊 **Enhanced Pull Information**: See page titles and progress when pulling from Notion
-- 🏷️ **Parent Page Context**: Status command shows current Notion parent page title
-- 📋 **Table Support**: Full bidirectional sync of Notion tables to markdown tables
-- 🎯 **Single File Pull**: Pull specific pages by filename with `--page` flag
-- 🖼️ **Extended Block Support**: Images, callouts, toggles, bookmarks, dividers, and more
-- 🧮 **LaTeX Math Equations**: Full support for mathematical expressions with `$$` blocks
-- 📊 **Mermaid Diagrams**: Preserve and sync Mermaid diagram code blocks
-- 🗄️ **CSV/Database Integration**: Export Notion databases to CSV and import CSV to databases
-- 🎨 **Enhanced Markdown**: Advanced formatting with proper caption and metadata handling
-- 📁 **Nested Page Support**: Pull command creates proper directory hierarchy mirroring Notion page structure
+- **Terminal User Interface (TUI)**: Interactive split-pane interface for visual file management and sync monitoring
+- **Bidirectional Sync**: Push markdown to Notion or pull Notion pages to markdown
+- **Git-like Staging**: Stage files for sync with `add`, `status`, and `reset` commands
+- **Frontmatter Support**: Automatic metadata management with YAML frontmatter
+- **Smart Change Detection**: Hybrid timestamp and content-based change tracking
+- **File Watching**: Real-time auto-sync when files change
+- **Secure Configuration**: Environment variable support for API tokens
+- **Flexible Mapping**: Choose between filename or frontmatter-based page mapping
+- **High Performance**: 2-6x faster sync with concurrent operations, caching, and batch processing
+- **Comprehensive Testing**: Full test coverage with CI/CD validation
+- **Fast & Reliable**: Built with Go for performance and reliability
+- **Configuration Verification**: Check your setup is ready with `verify` command
+- **Enhanced Pull Information**: See page titles and progress when pulling from Notion
+- **Parent Page Context**: Status command shows current Notion parent page title
+- **Table Support**: Full bidirectional sync of Notion tables to markdown tables
+- **Single File Pull**: Pull specific pages by filename with `--page` flag
+- **Extended Block Support**: Images, callouts, toggles, bookmarks, dividers, and more
+- **LaTeX Math Equations**: Full support for mathematical expressions with `$$` blocks
+- **Mermaid Diagrams**: Preserve and sync Mermaid diagram code blocks
+- **CSV/Database Integration**: Export Notion databases to CSV and import CSV to databases
+- **Enhanced Markdown**: Advanced formatting with proper caption and metadata handling
+- **Nested Page Support**: Pull command creates proper directory hierarchy mirroring Notion page structure
 
 ## Quick Start
 
@@ -60,7 +61,7 @@ cd go-notion-md-sync
 make build
 ```
 
-📖 **Detailed installation guide**: [INSTALLATION.md](docs/guides/INSTALLATION.md)
+**Detailed installation guide**: [INSTALLATION.md](docs/guides/INSTALLATION.md)
 
 ### 2. Setup Notion Integration
 
@@ -124,6 +125,37 @@ sync:
 ```
 
 ## Usage
+
+### Terminal User Interface (TUI)
+
+Launch the interactive terminal interface for visual file management:
+
+```bash
+# Launch the TUI
+notion-md-sync tui
+```
+
+The TUI provides a split-pane interface with:
+
+**Left Pane - File Browser:**
+- Interactive file listing with sync status indicators
+- File selection with visual markers
+- Status icons: synced, modified, error, pending, conflict
+- Statistics showing file counts by status
+
+**Right Pane - Sync Status:**
+- Real-time sync operation monitoring
+- Tree-style progress display
+- Elapsed time tracking
+- Daily sync statistics
+
+**Navigation:**
+- **Tab**: Switch focus between file list and sync status panes
+- **Arrow Keys**: Navigate within the active pane
+- **Space**: Select/deselect files for sync operations
+- **s**: Initiate sync for selected files
+- **c**: Open configuration view
+- **q / Ctrl+C**: Quit the application
 
 ### Git-like Staging Workflow
 
@@ -751,6 +783,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Support
 
-- 📖 [Documentation](docs/)
-- 🐛 [Issues](https://github.com/byvfx/go-notion-md-sync/issues)
-- 💬 [Discussions](https://github.com/byvfx/go-notion-md-sync/discussions)
+- [Documentation](docs/)
+- [Issues](https://github.com/byvfx/go-notion-md-sync/issues)
+- [Discussions](https://github.com/byvfx/go-notion-md-sync/discussions)

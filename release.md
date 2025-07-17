@@ -4,10 +4,12 @@ All release notes have been organized by version for easier navigation.
 
 ## Current Release
 
-- [v0.10.1 - Bug Fix: Nested Page Pulling](docs/releases/v0.10.1.md) - Critical fix for pull command not fetching nested sub-pages
+- [v0.12.0 - Terminal User Interface (TUI)](docs/releases/v0.12.0.md) - Interactive split-pane interface for visual file management and sync monitoring
 
 ## Previous Releases
 
+- [v0.11.0 - Performance Improvements (Phase 3)](docs/releases/v0.11.0.md) - Concurrent operations, intelligent caching, and advanced batch processing with 58x performance improvements
+- [v0.10.1 - Bug Fix: Nested Page Pulling](docs/releases/v0.10.1.md) - Critical fix for pull command not fetching nested sub-pages
 - [v0.10.0 - Feature Completeness (Phase 2)](docs/releases/v0.10.0.md) - Extended Notion blocks, LaTeX math, Mermaid diagrams, and CSV/database integration
 - [v0.8.2 - Test Coverage & Code Quality Foundation](docs/releases/v0.8.2.md) - Major milestone in code quality with 74% test coverage and A+ Go Report Card
 - [v0.8.1 - Watch Command Testing & Reliability Improvements](docs/releases/v0.8.1.md) - Comprehensive watch command tests and reliability improvements
@@ -23,26 +25,35 @@ All release notes have been organized by version for easier navigation.
 
 ## Release Highlights
 
-### Latest Bug Fix (v0.10.1)
-- 🐛 **Critical Fix**: Pull command now correctly fetches nested sub-pages
-- 📁 **Directory Structure**: Proper nested directory creation mirroring Notion hierarchy
-- 🔄 **Infinite Loop Fix**: Resolved timeout issues during recursive page fetching
-- 🛡️ **Enhanced Safety**: Improved cycle detection and error handling
+### Latest Release (v0.12.0)
+- **Terminal User Interface (TUI)**: Interactive split-pane interface for visual file management
+- **File Browser**: Interactive file listing with sync status indicators and selection
+- **Sync Monitoring**: Real-time sync operation monitoring with progress display
+- **Professional Design**: Clean interface with straight borders and focused pane highlighting
+- **Cross-Platform**: Works on Windows, macOS, and Linux with full keyboard navigation
 
-### Recent Features (v0.10.0)
-- 🖼️ **Extended Block Support**: Images, callouts, toggles, bookmarks, dividers
-- 🧮 **LaTeX Math Equations**: Full support for mathematical expressions with `$$` blocks
-- 📊 **Mermaid Diagrams**: Preserve and sync diagram code blocks
-- 🗄️ **CSV/Database Integration**: Export/import Notion databases to/from CSV
-- 🎨 **Enhanced Markdown**: Advanced formatting with proper metadata handling
+### Recent Major Updates
+
+#### Performance Improvements (v0.11.0)
+- **Concurrent Operations**: 9x faster with parallel processing using worker pools
+- **Intelligent Caching**: 2.4x improvement with memory-based LRU caching
+- **Advanced Batch Processing**: Combined optimizations provide 58x speed improvement
+- **Memory Efficiency**: 79% less memory usage with efficient allocation patterns
+
+#### Feature Completeness (v0.10.0)
+- **Extended Block Support**: Images, callouts, toggles, bookmarks, dividers
+- **LaTeX Math Equations**: Full support for mathematical expressions with $$ blocks
+- **Mermaid Diagrams**: Preserve and sync diagram code blocks
+- **CSV/Database Integration**: Export/import Notion databases to/from CSV
+- **Enhanced Markdown**: Advanced formatting with proper metadata handling
 
 ### Core Features
-- 🔄 Bidirectional sync between markdown and Notion
-- 🎯 Git-like staging workflow (add, status, reset, push)
-- 📝 Full frontmatter support with metadata tracking
-- 👀 Real-time file watching for auto-sync
-- 🔒 Secure configuration with environment variables
-- 🚀 High performance with concurrent processing
+- Bidirectional sync between markdown and Notion
+- Git-like staging workflow (add, status, reset, push)
+- Full frontmatter support with metadata tracking
+- Real-time file watching for auto-sync
+- Secure configuration with environment variables
+- High performance with concurrent processing
 
 ## Installation
 

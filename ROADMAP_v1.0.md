@@ -1,15 +1,15 @@
 # Roadmap to v1.0 - Feature Analysis & Recommendations
 
-## 🔍 Current State Analysis
+## Current State Analysis
 
-### ✅ Strengths
+### Strengths
 - **Solid Architecture**: Good separation of concerns with interfaces
 - **Core Functionality**: Basic sync operations work reliably
 - **Git-like Workflow**: Staging system provides familiar UX
 - **Table Support**: Full bidirectional table conversion
 - **Comprehensive Watch Tests**: Recently added robust test coverage
 
-### ❌ Critical Gaps Identified
+### Critical Gaps Identified
 
 #### 1. **Missing Test Coverage** (High Priority)
 ```
@@ -28,7 +28,7 @@ pkg/sync/engine.go - 0% coverage (Core sync logic)
 - Missing advanced block types
 - No nested list support beyond one level
 
-## 🎯 Roadmap to v1.0
+## Roadmap to v1.0
 
 ### Phase 1: Foundation Hardening (v0.8.2)
 **Goal**: Production-ready reliability
@@ -162,40 +162,40 @@ results, err := manager.BulkSyncPages(ctx, pageIDs, outputDir)
 - **79% less memory**: Efficient allocation patterns
 - **Sub-microsecond**: Cache lookup performance
 
-### Phase 4: User Experience (v0.12.0)
+### Phase 4: User Experience (v0.12.0) ✅ COMPLETED
 **Goal**: Bubble Tea TUI + Enhanced CLI
 
-#### **Bubble Tea TUI Implementation**
+#### **Bubble Tea TUI Implementation** ✅
 Bubble Tea is **excellent** for cross-platform terminal UIs! It works perfectly on Windows, macOS, and Linux.
 
 ```go
-// Proposed TUI structure:
+// Implemented TUI structure:
 package tui
 
 import "github.com/charmbracelet/bubbletea"
 
 type Model struct {
     currentView ViewType
-    fileList    FileListModel
-    syncStatus  SyncStatusModel
+    unified     UnifiedView
     config      ConfigModel
+    search      SearchModel
 }
 
-// Views:
-- File browser with sync status indicators
-- Real-time sync progress with spinners
-- Interactive conflict resolution
-- Configuration wizard
-- Sync history and logs
+// Implemented Views:
+- Split-pane unified view with file browser and sync status
+- Real-time sync progress with spinners and tree display
+- Interactive file selection and navigation
+- Professional clean design with straight borders
+- Cross-platform keyboard navigation
 ```
 
-**TUI Features**:
-- 📁 **File Browser**: Navigate markdown files with sync status
-- ⚡ **Live Sync Status**: Real-time progress bars and spinners  
-- 🔄 **Interactive Conflict Resolution**: Side-by-side diff view
-- ⚙️ **Configuration Wizard**: Guided setup process
-- 📊 **Dashboard**: Sync statistics and health monitoring
-- 🔍 **Search**: Find files and pages quickly
+**TUI Features Implemented**:
+- **File Browser**: Navigate markdown files with sync status indicators
+- **Live Sync Status**: Real-time progress bars and spinners with elapsed time
+- **Split-Pane Design**: File browser and sync status side-by-side
+- **Interactive Selection**: Visual file selection with space/tab navigation
+- **Professional UI**: Clean straight borders and focused pane highlighting
+- **Cross-Platform**: Works on Windows, macOS, and Linux
 
 #### **Enhanced CLI Commands**
 ```bash
@@ -266,7 +266,7 @@ type Plugin interface {
 - Health check endpoints
 - Comprehensive logging
 
-## 🎨 Bubble Tea TUI Mockup
+## Bubble Tea TUI Mockup
 
 ```
 ┌─ notion-md-sync v1.0 ─────────────────────────────────────────────────┐
@@ -285,7 +285,7 @@ type Plugin interface {
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
-## 🚀 Implementation Strategy
+## Implementation Strategy
 
 ### Development Approach
 1. **Test-Driven Development**: Write tests first for all new features
@@ -304,26 +304,24 @@ type Plugin interface {
 - **v0.9.0** (Foundation): ✅ Completed as v0.8.2
 - **v0.10.0** (Features): ✅ COMPLETED - July 2025
 - **v0.11.0** (Performance): ✅ COMPLETED - July 2025
-- **v0.12.0** (TUI): 2-3 weeks
+- **v0.12.0** (TUI): ✅ COMPLETED - July 16, 2025
 - **v0.13.0** (Advanced): 3-4 weeks
 - **v1.0.0** (Polish): 1-2 weeks
 
-**Total**: ~2-3 months remaining to v1.0
+**Total**: ~1-2 months remaining to v1.0
 
-## 💡 Immediate Next Steps
+## Immediate Next Steps
 
-1. **Performance Improvements** (Phase 3)
-   - Implement concurrent operations
-   - Add caching layer for API calls
-   - Optimize batch processing
-
-2. **Create TUI prototype** (Phase 4)
-   - Bubble Tea implementation
-   - Interactive file browser
-   - Real-time sync status
-
-3. **Advanced Features** (Phase 5)
+1. **Advanced Features** (Phase 5 - v0.13.0)
    - Workflow automation
    - Plugin system design
+   - Enhanced conflict resolution with side-by-side diff view
+   - Configuration wizard for guided setup
+   - Search functionality for files and pages
 
-The Bubble Tea suggestion is excellent - it will make the tool much more engaging while maintaining cross-platform compatibility!
+2. **v1.0 Polish** (Phase 6)
+   - Complete API documentation
+   - Video tutorials and examples
+   - Docker containers and distribution packages
+   - Performance profiling tools
+   - Health check endpoints
