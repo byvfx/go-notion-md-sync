@@ -4,10 +4,11 @@ All release notes have been organized by version for easier navigation.
 
 ## Current Release
 
-- [v0.12.0 - Terminal User Interface (TUI)](docs/releases/v0.12.0.md) - Interactive split-pane interface for visual file management and sync monitoring
+- [v0.13.0 - Unified Database Handling](docs/releases/v0.13.0.md) - Automatic database export during pull with intelligent CSV naming
 
 ## Previous Releases
 
+- [v0.12.0 - Terminal User Interface (TUI)](docs/releases/v0.12.0.md) - Interactive split-pane interface for visual file management and sync monitoring
 - [v0.11.0 - Performance Improvements (Phase 3)](docs/releases/v0.11.0.md) - Concurrent operations, intelligent caching, and advanced batch processing with 58x performance improvements
 - [v0.10.1 - Bug Fix: Nested Page Pulling](docs/releases/v0.10.1.md) - Critical fix for pull command not fetching nested sub-pages
 - [v0.10.0 - Feature Completeness (Phase 2)](docs/releases/v0.10.0.md) - Extended Notion blocks, LaTeX math, Mermaid diagrams, and CSV/database integration
@@ -25,14 +26,20 @@ All release notes have been organized by version for easier navigation.
 
 ## Release Highlights
 
-### Latest Release (v0.12.0)
-- **Terminal User Interface (TUI)**: Interactive split-pane interface for visual file management
-- **File Browser**: Interactive file listing with sync status indicators and selection
-- **Sync Monitoring**: Real-time sync operation monitoring with progress display
-- **Professional Design**: Clean interface with straight borders and focused pane highlighting
-- **Cross-Platform**: Works on Windows, macOS, and Linux with full keyboard navigation
+### Latest Release (v0.13.0)
+- **Unified Database Handling**: Pull command automatically detects and exports databases as CSV files
+- **Intelligent Naming**: CSV files named based on actual database titles instead of generic names
+- **Simplified CLI**: Removed separate database command - all functionality integrated into pull
+- **Seamless Integration**: Database references automatically added to markdown files
+- **Improved Workflow**: One command to pull all content - pages, nested pages, and databases
 
 ### Recent Major Updates
+
+#### Terminal User Interface (v0.12.0)
+- **Interactive Split-Pane Interface**: Visual file management with file browser and sync status
+- **Real-time Monitoring**: Live sync operation tracking with progress display
+- **Professional Design**: Clean interface with straight borders and keyboard navigation
+- **Cross-Platform Support**: Works seamlessly on Windows, macOS, and Linux
 
 #### Performance Improvements (v0.11.0)
 - **Concurrent Operations**: 9x faster with parallel processing using worker pools

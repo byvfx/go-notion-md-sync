@@ -29,7 +29,7 @@ A powerful CLI tool for synchronizing markdown files with Notion pages. Built wi
 - **Extended Block Support**: Images, callouts, toggles, bookmarks, dividers, and more
 - **LaTeX Math Equations**: Full support for mathematical expressions with `$$` blocks
 - **Mermaid Diagrams**: Preserve and sync Mermaid diagram code blocks
-- **CSV/Database Integration**: Export Notion databases to CSV and import CSV to databases
+- **Unified Database Handling**: Automatic CSV export of databases during pull with intelligent naming
 - **Enhanced Markdown**: Advanced formatting with proper caption and metadata handling
 - **Nested Page Support**: Pull command creates proper directory hierarchy mirroring Notion page structure
 
@@ -382,22 +382,33 @@ Work with individual files instead of entire directories:
 ./bin/notion-md-sync sync pull --file docs/existing-doc.md
 ```
 
-#### Database Operations
-Export Notion databases to CSV or import CSV files to create/update databases:
+#### Unified Database Handling
+
+The pull command automatically handles databases embedded in pages:
 
 ```bash
-# Export a Notion database to CSV
-./bin/notion-md-sync database export DATABASE_ID output.csv
+# Pull pages with automatic database export
+./bin/notion-md-sync pull --verbose
 
-# Import CSV to create a new database
-./bin/notion-md-sync database create input.csv PARENT_PAGE_ID
-
-# Import CSV to update existing database
-./bin/notion-md-sync database import input.csv DATABASE_ID
-
-# Pull a specific page to a file
-./bin/notion-md-sync pull --page-id PAGE_ID --output docs/new-doc.md
+# Example output structure:
+# docs/
+# └── Sales Report/
+#     ├── Sales Report.md          # Main page content
+#     ├── Sales_Report_db1.csv     # First database on the page
+#     └── Sales_Report_db2.csv     # Second database (if any)
 ```
+
+**What gets pulled automatically:**
+- **Regular tables**: Converted to markdown tables in the page content
+- **Databases**: Exported as CSV files with automatic naming (`PageName_dbN.csv`)
+- **Mixed content**: Pages with both text content and databases are handled seamlessly
+- **Database references**: Markdown includes links to the CSV files
+
+**Database Handling Notes**:
+- Databases are automatically exported during pull operations
+- CSV files are named based on the database title for clarity
+- Database functionality is fully integrated - no separate commands needed
+- Future releases will support two-way database synchronization
 
 #### Directory Options
 Specify custom directories for operations:
@@ -696,7 +707,7 @@ make validate
 ./bin/notion-md-sync watch --help
 ./bin/notion-md-sync status --help
 ./bin/notion-md-sync verify --help
-./bin/notion-md-sync database --help
+./bin/notion-md-sync tui --help
 ```
 
 ## Development

@@ -208,10 +208,16 @@ notion-md-sync doctor                   # Diagnose common issues
 notion-md-sync migrate <source> <dest>  # Migrate between Notion workspaces
 ```
 
-### Phase 5: Advanced Features (v0.13.0)
-**Goal**: Power user features
+### Phase 5: Advanced Features (v0.13.0) ✅ COMPLETED
+**Goal**: Unified database handling and improved workflow
 
-#### **Workflow Automation**
+#### **Unified Database Handling** ✅ COMPLETED
+- **Automatic Database Export**: Pull command detects and exports databases as CSV
+- **Intelligent Naming**: CSV files named based on actual database titles
+- **Simplified CLI**: Removed separate database command - all integrated into pull
+- **Seamless Integration**: Database references automatically added to markdown
+
+#### **Future Workflow Automation** (Moved to v0.14.0)
 ```yaml
 # .notion-sync-workflows.yaml
 workflows:
@@ -305,21 +311,28 @@ type Plugin interface {
 - **v0.10.0** (Features): ✅ COMPLETED - July 2025
 - **v0.11.0** (Performance): ✅ COMPLETED - July 2025
 - **v0.12.0** (TUI): ✅ COMPLETED - July 16, 2025
-- **v0.13.0** (Advanced): 3-4 weeks
+- **v0.13.0** (Unified Database): ✅ COMPLETED - July 19, 2025
+- **v0.14.0** (Workflow Automation): 2-3 weeks
 - **v1.0.0** (Polish): 1-2 weeks
 
 **Total**: ~1-2 months remaining to v1.0
 
 ## Immediate Next Steps
 
-1. **Advanced Features** (Phase 5 - v0.13.0)
-   - Workflow automation
+1. **Workflow Automation** (Phase 5.1 - v0.14.0)
+   - Scheduled sync operations
+   - Webhook integrations
+   - Automated backup workflows
+   - CI/CD pipeline integration
+
+2. **Advanced Features** (Phase 5.2 - v0.15.0)
    - Plugin system design
    - Enhanced conflict resolution with side-by-side diff view
    - Configuration wizard for guided setup
    - Search functionality for files and pages
+   - Two-way database synchronization
 
-2. **v1.0 Polish** (Phase 6)
+3. **v1.0 Polish** (Phase 6)
    - Complete API documentation
    - Video tutorials and examples
    - Docker containers and distribution packages

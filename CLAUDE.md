@@ -81,6 +81,40 @@ notion-md-sync/
 └── Makefile
 ```
 
+## v0.13.0 Unified Database Handling (Complete)
+
+### Enhanced Pull Command
+- **Unified Database Handling**: Pull command now automatically detects and exports child databases
+- **Intelligent CSV Naming**: Database CSV files are named based on actual database titles
+- **Automatic CSV Export**: Databases embedded in pages are exported alongside markdown content
+- **Mixed Content Support**: Pages with both text content and databases are handled seamlessly
+- **Database References**: Markdown content includes automatic links to exported CSV files
+
+### Smart Naming Implementation
+- **Database Title Detection**: Uses `GetDatabase()` API to fetch actual database titles
+- **Meaningful Filenames**: `Product_Inventory_Database.csv` instead of `PageName_db1.csv`
+- **Fallback Logic**: Gracefully handles databases without titles or API failures
+- **Sanitized Names**: Proper filesystem-safe naming with special character handling
+
+### CLI Simplification
+- **Removed**: Entire `database` command and subcommands (export, import, create)
+- **Removed**: `pkg/cli/database.go` file and command registration in root.go
+- **Simplified**: All database functionality integrated into standard pull workflow
+- **Cleaner**: Fewer commands to remember, more intuitive usage
+
+### Technical Implementation
+- **Enhanced**: `exportChildDatabases` function with intelligent naming logic
+- **Modified**: CSV filename generation to use database titles when available
+- **Maintained**: Existing `ChildDatabaseBlock` support and detection logic
+- **Preserved**: CSV export integration with `DatabaseSync` interface
+
+### User Experience Improvements
+- **Single Command**: Users no longer need separate commands for databases vs pages
+- **Better Organization**: Meaningful CSV filenames make data management easier
+- **Clear References**: Markdown includes a "Databases" section linking to CSV files
+- **Error Handling**: Warnings for database export failures don't stop page sync
+- **Future Ready**: Foundation for two-way database synchronization
+
 ## v0.12.0 Terminal User Interface (Phase 4 Complete)
 
 ### TUI Implementation with Bubble Tea
