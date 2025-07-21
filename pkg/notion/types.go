@@ -87,9 +87,10 @@ type Block struct {
 	Image            *ImageBlock    `json:"image,omitempty"`
 	Callout          *CalloutBlock  `json:"callout,omitempty"`
 	Toggle           *ToggleBlock   `json:"toggle,omitempty"`
-	Bookmark         *BookmarkBlock `json:"bookmark,omitempty"`
-	Divider          *DividerBlock  `json:"divider,omitempty"`
-	Equation         *EquationBlock `json:"equation,omitempty"`
+	Bookmark         *BookmarkBlock     `json:"bookmark,omitempty"`
+	Divider          *DividerBlock      `json:"divider,omitempty"`
+	Equation         *EquationBlock     `json:"equation,omitempty"`
+	ChildDatabase    *ChildDatabaseBlock `json:"child_database,omitempty"`
 
 	// For unknown block types, keep the raw content
 	Content map[string]interface{} `json:",inline"`
@@ -205,6 +206,11 @@ type DividerBlock struct {
 
 type EquationBlock struct {
 	Expression string `json:"expression"`
+}
+
+type ChildDatabaseBlock struct {
+	DatabaseID string `json:"database_id"`
+	Title      string `json:"title,omitempty"`
 }
 
 // Database types

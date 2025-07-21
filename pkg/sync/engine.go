@@ -112,10 +112,22 @@ func (e *engine) SyncNotionToFile(ctx context.Context, pageID, filePath string) 
 		return fmt.Errorf("failed to get page blocks: %w", err)
 	}
 
+	// Check for child databases and export them
+	databaseRefs, err := e.exportChildDatabases(ctx, pageID, filePath, title)
+	if err != nil {
+		// Log warning but don't fail the page sync
+		fmt.Printf("  Warning: Failed to export databases: %v\n", err)
+	}
+
 	// Convert blocks to markdown
 	content, err := e.converter.BlocksToMarkdown(blocks)
 	if err != nil {
 		return fmt.Errorf("failed to convert blocks to markdown: %w", err)
+	}
+
+	// Add database references to content if any databases were exported
+	if len(databaseRefs) > 0 {
+		content = e.addDatabaseReferences(content, databaseRefs)
 	}
 
 	// Create frontmatter
@@ -511,4 +523,136 @@ func (e *engine) syncSpecificNotionToMarkdown(ctx context.Context, filename stri
 	}
 
 	return nil
+}
+
+// DatabaseReference represents a reference to an exported database
+type DatabaseReference struct {
+	DatabaseID string
+	Title      string
+	CSVPath    string
+}
+
+// exportChildDatabases finds and exports all child databases of a page
+func (e *engine) exportChildDatabases(ctx context.Context, pageID, filePath, pageTitle string) ([]DatabaseReference, error) {
+	var databaseRefs []DatabaseReference
+
+	// Get child databases - we need to check if the Notion API provides child database blocks
+	// For now, we'll look for database blocks in the page content
+	blocks, err := e.notion.GetPageBlocks(ctx, pageID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get page blocks: %w", err)
+	}
+
+	databaseCount := 0
+	
+	// Check blocks for child_database type
+	for _, block := range blocks {
+		if block.Type == "child_database" {
+			databaseCount++
+			
+			// Debug: print block structure
+			fmt.Printf("  Debug: Found child_database block, ID: %s\n", block.ID)
+			
+			// Try to extract database ID - it might be the block ID itself
+			databaseID := block.ID
+			
+			// Also check if we have the ChildDatabase field populated
+			if block.ChildDatabase != nil && block.ChildDatabase.DatabaseID != "" {
+				databaseID = block.ChildDatabase.DatabaseID
+			}
+			
+			if databaseID == "" {
+				fmt.Printf("  Warning: Found child_database block but couldn't extract database ID\n")
+				continue
+			}
+
+			// Get database title and create better CSV filename
+			baseDir := filepath.Dir(filePath)
+			dbTitle := fmt.Sprintf("Database %d", databaseCount)
+			var csvFileName string
+			
+			if database, err := e.notion.GetDatabase(ctx, databaseID); err == nil {
+				if len(database.Title) > 0 && database.Title[0].PlainText != "" {
+					dbTitle = database.Title[0].PlainText
+					// Use the database title as the CSV filename
+					sanitizedDbTitle := e.sanitizeFilename(dbTitle)
+					csvFileName = fmt.Sprintf("%s.csv", sanitizedDbTitle)
+				} else {
+					// Fallback to page name with counter if database has no title
+					sanitizedTitle := e.sanitizeFilename(pageTitle)
+					csvFileName = fmt.Sprintf("%s_db%d.csv", sanitizedTitle, databaseCount)
+				}
+			} else {
+				// Fallback if we can't get database info
+				fmt.Printf("  Warning: Could not get database info for %s: %v\n", databaseID, err)
+				sanitizedTitle := e.sanitizeFilename(pageTitle)
+				csvFileName = fmt.Sprintf("%s_db%d.csv", sanitizedTitle, databaseCount)
+			}
+			
+			csvPath := filepath.Join(baseDir, csvFileName)
+
+			// Export database to CSV
+			fmt.Printf("  Exporting database '%s' to: %s\n", dbTitle, csvFileName)
+			
+			// Create database sync instance and export
+			dbSync := NewDatabaseSync(e.notion)
+			if err := dbSync.SyncNotionDatabaseToCSV(ctx, databaseID, csvPath); err != nil {
+				fmt.Printf("  Warning: Failed to export database %s: %v\n", databaseID, err)
+				continue
+			}
+
+			databaseRefs = append(databaseRefs, DatabaseReference{
+				DatabaseID: databaseID,
+				Title:      dbTitle,
+				CSVPath:    csvFileName, // Store relative path for markdown reference
+			})
+		}
+	}
+
+	if len(databaseRefs) > 0 {
+		fmt.Printf("  Exported %d database(s)\n", len(databaseRefs))
+	}
+
+	return databaseRefs, nil
+}
+
+// addDatabaseReferences adds database references to the markdown content
+func (e *engine) addDatabaseReferences(content string, databaseRefs []DatabaseReference) string {
+	if len(databaseRefs) == 0 {
+		return content
+	}
+
+	// Add database references at the end of the content
+	content += "\n\n## Databases\n\n"
+	
+	for _, ref := range databaseRefs {
+		content += fmt.Sprintf("- [%s](./%s)\n", ref.Title, ref.CSVPath)
+	}
+
+	return content
+}
+
+// sanitizeFilename removes characters that are invalid in filenames
+func (e *engine) sanitizeFilename(filename string) string {
+	// Replace common problematic characters
+	filename = strings.ReplaceAll(filename, "/", "_")
+	filename = strings.ReplaceAll(filename, "\\", "_")
+	filename = strings.ReplaceAll(filename, ":", "_")
+	filename = strings.ReplaceAll(filename, "*", "_")
+	filename = strings.ReplaceAll(filename, "?", "_")
+	filename = strings.ReplaceAll(filename, "\"", "_")
+	filename = strings.ReplaceAll(filename, "<", "_")
+	filename = strings.ReplaceAll(filename, ">", "_")
+	filename = strings.ReplaceAll(filename, "|", "_")
+	filename = strings.ReplaceAll(filename, " ", "_")
+	
+	// Remove any leading/trailing dots or spaces
+	filename = strings.Trim(filename, ". ")
+	
+	// Ensure it's not empty
+	if filename == "" {
+		filename = "untitled"
+	}
+	
+	return filename
 }
