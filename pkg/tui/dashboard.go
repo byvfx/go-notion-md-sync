@@ -117,7 +117,7 @@ func (m DashboardModel) View() string {
 
 	// Header
 	header := titleStyle.Render("📊 notion-md-sync Dashboard")
-	
+
 	// Connection status
 	var connectionStatus string
 	if m.isConnected {

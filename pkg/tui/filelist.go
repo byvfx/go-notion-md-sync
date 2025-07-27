@@ -23,13 +23,13 @@ const (
 
 // FileItem represents a file in the list
 type FileItem struct {
-	Path         string
-	Name         string
-	Status       SyncStatus
-	LastSync     string
-	Size         int64
-	IsDirectory  bool
-	Desc         string  // Renamed from Description to avoid conflict
+	Path        string
+	Name        string
+	Status      SyncStatus
+	LastSync    string
+	Size        int64
+	IsDirectory bool
+	Desc        string // Renamed from Description to avoid conflict
 }
 
 // FilterValue implements list.Item
@@ -207,7 +207,7 @@ func (m FileListModel) View() string {
 	// Build status bar
 	selectedCount := len(m.selectedFiles)
 	statusBar := fmt.Sprintf("\n📊 %d files selected", selectedCount)
-	
+
 	help := "\n💡 Space: select | Enter: open | a: select all | n: select none | s: sync selected"
 
 	return m.list.View() + statusBar + help
@@ -242,7 +242,7 @@ func (m FileListModel) loadFiles(path string) tea.Cmd {
 	return func() tea.Msg {
 		// TODO: Implement actual file loading from filesystem
 		// For now, return mock data
-		
+
 		files := []FileItem{
 			{
 				Path:        filepath.Join(path, ".."),

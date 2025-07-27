@@ -4,10 +4,11 @@ All release notes have been organized by version for easier navigation.
 
 ## Current Release
 
-- [v0.13.0 - Unified Database Handling](docs/releases/v0.13.0.md) - Automatic database export during pull with intelligent CSV naming
+- [v0.14.0 - Performance & Concurrency Release](docs/releases/v0.14.0.md) - 2x performance improvement with concurrent processing and enhanced TUI
 
 ## Previous Releases
 
+- [v0.13.0 - Unified Database Handling](docs/releases/v0.13.0.md) - Automatic database export during pull with intelligent CSV naming
 - [v0.12.0 - Terminal User Interface (TUI)](docs/releases/v0.12.0.md) - Interactive split-pane interface for visual file management and sync monitoring
 - [v0.11.0 - Performance Improvements (Phase 3)](docs/releases/v0.11.0.md) - Concurrent operations, intelligent caching, and advanced batch processing with 58x performance improvements
 - [v0.10.1 - Bug Fix: Nested Page Pulling](docs/releases/v0.10.1.md) - Critical fix for pull command not fetching nested sub-pages
@@ -26,12 +27,12 @@ All release notes have been organized by version for easier navigation.
 
 ## Release Highlights
 
-### Latest Release (v0.13.0)
-- **Unified Database Handling**: Pull command automatically detects and exports databases as CSV files
-- **Intelligent Naming**: CSV files named based on actual database titles instead of generic names
-- **Simplified CLI**: Removed separate database command - all functionality integrated into pull
-- **Seamless Integration**: Database references automatically added to markdown files
-- **Improved Workflow**: One command to pull all content - pages, nested pages, and databases
+### Latest Release (v0.14.0)
+- **2x Performance Improvement**: Concurrent processing with smart worker pools (5-10 workers)
+- **Extended Timeouts**: 10-minute timeout support for large workspaces and slow networks
+- **Enhanced TUI**: Interactive configuration setup and real-time progress reporting
+- **Fixed UX Issues**: Config discovery, terminal corruption, and progress reporting
+- **Better Reliability**: Robust handling of slow Notion API responses
 
 ### Recent Major Updates
 

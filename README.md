@@ -8,30 +8,48 @@
 
 A powerful CLI tool for synchronizing markdown files with Notion pages. Built with Go for fast, reliable bidirectional sync between your local markdown files and Notion workspace.
 
+## ✨ **What's New in v0.14.0**
+
+🚀 **2x Performance Improvement** - Concurrent processing with smart worker pools  
+⚡ **Extended Timeouts** - 10-minute timeout handles large syncs reliably  
+🎛️ **Enhanced TUI** - Interactive config setup and real-time progress reporting  
+🔧 **Better UX** - Fixed config discovery and terminal corruption issues  
+
 ## Features
 
+### **🚀 Performance & Reliability**
+- **Concurrent Processing**: 2x faster pull operations with scalable worker pools (5-10 workers)
+- **Extended Timeouts**: 10-minute timeout support for large workspaces and slow networks
+- **High Performance**: 2-6x faster sync with concurrent operations, caching, and batch processing
+- **Smart Change Detection**: Hybrid timestamp and content-based change tracking
+- **Fast & Reliable**: Built with Go for performance and reliability
+
+### **🎛️ User Interface**
 - **Terminal User Interface (TUI)**: Interactive split-pane interface for visual file management and sync monitoring
+- **Interactive Config Setup**: Press 'c' in TUI to configure Notion credentials interactively
+- **Real-time Progress**: Live sync progress with proper terminal management
+- **Enhanced Pull Information**: See page titles and progress when pulling from Notion
+
+### **📁 Sync & Content Management**
 - **Bidirectional Sync**: Push markdown to Notion or pull Notion pages to markdown
 - **Git-like Staging**: Stage files for sync with `add`, `status`, and `reset` commands
 - **Frontmatter Support**: Automatic metadata management with YAML frontmatter
-- **Smart Change Detection**: Hybrid timestamp and content-based change tracking
 - **File Watching**: Real-time auto-sync when files change
-- **Secure Configuration**: Environment variable support for API tokens
-- **Flexible Mapping**: Choose between filename or frontmatter-based page mapping
-- **High Performance**: 2-6x faster sync with concurrent operations, caching, and batch processing
-- **Comprehensive Testing**: Full test coverage with CI/CD validation
-- **Fast & Reliable**: Built with Go for performance and reliability
-- **Configuration Verification**: Check your setup is ready with `verify` command
-- **Enhanced Pull Information**: See page titles and progress when pulling from Notion
-- **Parent Page Context**: Status command shows current Notion parent page title
-- **Table Support**: Full bidirectional sync of Notion tables to markdown tables
-- **Single File Pull**: Pull specific pages by filename with `--page` flag
+- **Nested Page Support**: Pull command creates proper directory hierarchy mirroring Notion page structure
+
+### **🔧 Advanced Features**
+- **Unified Database Handling**: Automatic CSV export of databases during pull with intelligent naming
 - **Extended Block Support**: Images, callouts, toggles, bookmarks, dividers, and more
 - **LaTeX Math Equations**: Full support for mathematical expressions with `$$` blocks
 - **Mermaid Diagrams**: Preserve and sync Mermaid diagram code blocks
-- **Unified Database Handling**: Automatic CSV export of databases during pull with intelligent naming
-- **Enhanced Markdown**: Advanced formatting with proper caption and metadata handling
-- **Nested Page Support**: Pull command creates proper directory hierarchy mirroring Notion page structure
+- **Table Support**: Full bidirectional sync of Notion tables to markdown tables
+- **Single File Pull**: Pull specific pages by filename with `--page` flag
+
+### **🔒 Security & Configuration**
+- **Secure Configuration**: Environment variable support for API tokens
+- **Flexible Mapping**: Choose between filename or frontmatter-based page mapping
+- **Configuration Verification**: Check your setup is ready with `verify` command
+- **Parent Page Context**: Status command shows current Notion parent page title
 
 ## Quick Start
 
@@ -126,7 +144,7 @@ sync:
 
 ## Usage
 
-### Terminal User Interface (TUI)
+### Terminal User Interface (TUI) - Enhanced in v0.14.0
 
 Launch the interactive terminal interface for visual file management:
 
@@ -134,6 +152,11 @@ Launch the interactive terminal interface for visual file management:
 # Launch the TUI
 notion-md-sync tui
 ```
+
+**🎛️ New in v0.14.0: Interactive Setup & Enhanced Performance**
+- **Interactive Config**: Press 'c' to set up Notion credentials interactively
+- **Real-time Progress**: Live sync progress with proper terminal management
+- **2x Faster Operations**: Concurrent processing with visual progress indicators
 
 The TUI provides a split-pane interface with:
 
@@ -144,17 +167,20 @@ The TUI provides a split-pane interface with:
 - Statistics showing file counts by status
 
 **Right Pane - Sync Status:**
-- Real-time sync operation monitoring
+- Real-time sync operation monitoring with concurrent processing
 - Tree-style progress display
-- Elapsed time tracking
+- Elapsed time tracking for operations
 - Daily sync statistics
 
-**Navigation:**
+**Navigation & Commands:**
 - **Tab**: Switch focus between file list and sync status panes
 - **Arrow Keys**: Navigate within the active pane
 - **Space**: Select/deselect files for sync operations
-- **s**: Initiate sync for selected files
-- **c**: Open configuration view
+- **i**: Initialize new project (creates config.yaml, docs/, sample files)
+- **s**: Initiate bidirectional sync for selected files
+- **p**: Pull from Notion (now 2x faster with concurrent processing)
+- **P**: Push to Notion
+- **c**: Interactive configuration setup (NEW in v0.14.0)
 - **q / Ctrl+C**: Quit the application
 
 ### Git-like Staging Workflow
@@ -312,35 +338,35 @@ This structure ensures:
 
 ### Advanced Usage
 
-#### Performance Optimization (v0.11.0+)
+#### Performance Optimization - Enhanced in v0.14.0
 
-For large-scale operations, v0.11.0 introduces powerful performance optimizations:
+**🚀 v0.14.0 Performance Improvements**: 2x faster pull operations with concurrent processing
 
-**Concurrent Sync**: 2-3x faster with parallel processing
+**Concurrent Processing**: Now built-in by default
 ```bash
-# Default: Uses optimal worker count automatically
-./bin/notion-md-sync pull --concurrent
+# Pull operations automatically use concurrent processing
+./bin/notion-md-sync pull
+# ✅ 5-10 workers based on page count
+# ✅ 2x performance improvement
+# ✅ 10-minute timeout for large syncs
 
-# Custom worker count for fine-tuning
-./bin/notion-md-sync pull --workers 10
+# Use TUI for visual progress
+./bin/notion-md-sync tui
+# Press 'p' for concurrent pull with real-time progress
 ```
 
-**Caching**: ~2x improvement for repeated operations
-```bash
-# Enable caching for API calls (enabled by default)
-./bin/notion-md-sync pull --cache-ttl 15m
+**Performance Benchmarks (v0.14.0)**:
+- **Before**: 34+ seconds for 3 pages (11.3s per page)
+- **After**: 75 seconds for 14 pages (5.35s per page)
+- **Improvement**: ~2x faster per page + handles larger workspaces
 
-# Increase cache size for large workloads
-./bin/notion-md-sync pull --cache-size 5000
-```
-
-**Batch Processing**: Optimal for 100+ pages
+**Legacy Performance Options (v0.11.0+)**:
 ```bash
-# Process in optimized batches
+# Advanced caching for repeated operations
+./bin/notion-md-sync pull --cache-ttl 15m --cache-size 5000
+
+# Custom batch processing for specialized workflows
 ./bin/notion-md-sync pull --batch-size 50
-
-# Full optimization stack (4-6x faster for large syncs)
-./bin/notion-md-sync pull --concurrent --workers 15 --batch-size 50 --cache-size 5000
 ```
 
 **Performance Testing**:

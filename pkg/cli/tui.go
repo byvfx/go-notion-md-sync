@@ -3,9 +3,11 @@ package cli
 import (
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/byvfx/go-notion-md-sync/pkg/tui"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
 
@@ -50,7 +52,18 @@ func runTUI(cmd *cobra.Command, args []string) error {
 		model,
 		tea.WithAltScreen(),       // Use alternate screen buffer
 		tea.WithMouseCellMotion(), // Enable mouse support
+		tea.WithInput(os.Stdin),   // Explicit input handling
+		tea.WithOutput(os.Stderr), // Use stderr for TUI output to avoid conflicts with captured stdout
 	)
+
+	// Set up signal handling for graceful shutdown
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		<-c
+		p.Quit()
+	}()
 
 	// Run the program
 	if _, err := p.Run(); err != nil {
@@ -62,16 +75,7 @@ func runTUI(cmd *cobra.Command, args []string) error {
 
 // getConfigPath returns the path to the config file
 func getConfigPath() (string, error) {
-	// First check if config flag was provided
-	if configPath != "" {
-		return configPath, nil
-	}
-
-	// Otherwise use default
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-
-	return home + "/.notion-md-sync.yaml", nil
+	// Return the configPath as-is (empty string if not provided)
+	// This allows config.Load to use its own discovery logic
+	return configPath, nil
 }

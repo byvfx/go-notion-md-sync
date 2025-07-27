@@ -20,7 +20,7 @@ func TestNewFileListModel(t *testing.T) {
 
 func TestFileListFileSelection(t *testing.T) {
 	model := NewFileListModel()
-	
+
 	// Test space key for selection
 	spaceMsg := tea.KeyMsg{Type: tea.KeySpace}
 	_, _ = model.Update(spaceMsg)
@@ -31,7 +31,7 @@ func TestFileListFileSelection(t *testing.T) {
 
 func TestFileListSelectAll(t *testing.T) {
 	model := NewFileListModel()
-	
+
 	// Test 'a' key for select all
 	aMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")}
 	_, _ = model.Update(aMsg)
@@ -42,10 +42,10 @@ func TestFileListSelectAll(t *testing.T) {
 
 func TestFileListDeselectAll(t *testing.T) {
 	model := NewFileListModel()
-	
+
 	// First select some files (mock)
 	model.selectedFiles["test.md"] = true
-	
+
 	// Test 'n' key for deselect all
 	nMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}
 	model, _ = model.Update(nMsg)
@@ -57,18 +57,18 @@ func TestFileListDeselectAll(t *testing.T) {
 
 func TestFileListGetSelectedFiles(t *testing.T) {
 	model := NewFileListModel()
-	
+
 	// Add some selected files
 	model.selectedFiles["file1.md"] = true
 	model.selectedFiles["file2.md"] = true
 	model.selectedFiles["file3.md"] = false // This shouldn't be included
-	
+
 	selected := model.GetSelectedFiles()
-	
+
 	if len(selected) != 2 {
 		t.Errorf("Expected 2 selected files, got %d", len(selected))
 	}
-	
+
 	// Check that the correct files are selected
 	found1, found2 := false, false
 	for _, file := range selected {
@@ -79,7 +79,7 @@ func TestFileListGetSelectedFiles(t *testing.T) {
 			found2 = true
 		}
 	}
-	
+
 	if !found1 || !found2 {
 		t.Error("Selected files don't match expected files")
 	}
@@ -100,7 +100,7 @@ func TestFileItemStatusIcon(t *testing.T) {
 	for _, test := range tests {
 		item := FileItem{Status: test.status}
 		icon := item.getStatusIcon()
-		
+
 		if icon != test.expectedIcon {
 			t.Errorf("Status %v: expected icon %s, got %s", test.status, test.expectedIcon, icon)
 		}
@@ -114,24 +114,24 @@ func TestFileItemTitle(t *testing.T) {
 		Status:      StatusSynced,
 		IsDirectory: false,
 	}
-	
+
 	title := fileItem.Title()
 	expected := "✅ 📄 test.md"
-	
+
 	if title != expected {
 		t.Errorf("Expected title %s, got %s", expected, title)
 	}
-	
+
 	// Test directory
 	dirItem := FileItem{
 		Name:        "docs",
 		Status:      StatusSynced,
 		IsDirectory: true,
 	}
-	
+
 	title = dirItem.Title()
 	expected = "✅ 📁 docs"
-	
+
 	if title != expected {
 		t.Errorf("Expected title %s, got %s", expected, title)
 	}

@@ -27,13 +27,13 @@ func TestModelViewSwitching(t *testing.T) {
 		expectedView ViewType
 	}{
 		{"u", UnifiedViewType},
-		{"c", ConfigurationView},
+		{"c", ConfigInputView},
 	}
 
 	for _, test := range tests {
 		// Create key message
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(test.key)}
-		
+
 		// Update model
 		updatedModel, _ := model.Update(msg)
 		model = updatedModel.(Model)

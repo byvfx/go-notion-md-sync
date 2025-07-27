@@ -206,30 +206,113 @@ func (e *engine) syncAllNotionToMarkdown(ctx context.Context) error {
 		}
 	}
 
+	// Use concurrent processing for better performance
+	return e.syncPagesConcurrently(ctx, pages, pageParentMap)
+}
+
+// syncPagesConcurrently processes multiple pages concurrently using simple goroutines
+func (e *engine) syncPagesConcurrently(ctx context.Context, pages []notion.Page, pageParentMap map[string]string) error {
+	// Configure concurrency based on page count
+	workerCount := 5 // Default to 5 workers
+	if len(pages) < 5 {
+		workerCount = len(pages) // Use fewer workers for small batches
+	} else if len(pages) > 20 {
+		workerCount = 10 // Use more workers for large batches
+	}
+
+	fmt.Printf("🚀 Using concurrent processing with %d workers for %d pages\n", workerCount, len(pages))
+
+	// Create channels for work distribution
+	pageJobs := make(chan pageJob, len(pages))
+	results := make(chan syncResult, len(pages))
+
+	// Start workers
+	for i := 0; i < workerCount; i++ {
+		go e.syncWorker(ctx, pageJobs, results)
+	}
+
+	// Send jobs to workers
 	for i, page := range pages {
 		title := e.extractTitleFromPage(&page)
-
-		// Build the file path including parent directories
 		filePath := e.buildFilePathForPage(&page, title, pageParentMap, pages)
 
-		fmt.Printf("[%d/%d] Pulling page: %s\n", i+1, len(pages), title)
-		fmt.Printf("  Notion ID: %s\n", page.ID)
-		fmt.Printf("  Saving to: %s\n", filePath)
-
-		// Create parent directory if needed
-		dir := filepath.Dir(filePath)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("failed to create directory %s: %w", dir, err)
+		pageJobs <- pageJob{
+			page:     page,
+			title:    title,
+			filePath: filePath,
+			index:    i + 1,
+			total:    len(pages),
 		}
+	}
+	close(pageJobs)
 
-		if err := e.SyncNotionToFile(ctx, page.ID, filePath); err != nil {
-			return fmt.Errorf("failed to sync page %s: %w", page.ID, err)
+	// Collect results
+	var errors []string
+	successCount := 0
+	for i := 0; i < len(pages); i++ {
+		result := <-results
+		if result.err != nil {
+			errors = append(errors, fmt.Sprintf("Page %s: %v", result.pageID, result.err))
+		} else {
+			successCount++
 		}
+	}
 
-		fmt.Printf("  ✓ Successfully pulled\n\n")
+	fmt.Printf("\n🎉 Concurrent sync complete! %d/%d pages successful\n", successCount, len(pages))
+
+	if len(errors) > 0 {
+		fmt.Printf("❌ %d pages failed:\n", len(errors))
+		for _, errMsg := range errors {
+			fmt.Printf("  - %s\n", errMsg)
+		}
+		return fmt.Errorf("%d pages failed to sync", len(errors))
 	}
 
 	return nil
+}
+
+// pageJob represents a page sync job
+type pageJob struct {
+	page     notion.Page
+	title    string
+	filePath string
+	index    int
+	total    int
+}
+
+// syncResult represents the result of a sync operation
+type syncResult struct {
+	pageID string
+	err    error
+}
+
+// syncWorker processes page sync jobs concurrently
+func (e *engine) syncWorker(ctx context.Context, jobs <-chan pageJob, results chan<- syncResult) {
+	for job := range jobs {
+		result := syncResult{pageID: job.page.ID}
+
+		// Print progress
+		fmt.Printf("[%d/%d] Pulling page: %s\n", job.index, job.total, job.title)
+		fmt.Printf("  Notion ID: %s\n", job.page.ID)
+		fmt.Printf("  Saving to: %s\n", job.filePath)
+
+		// Create parent directory if needed
+		dir := filepath.Dir(job.filePath)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			result.err = fmt.Errorf("failed to create directory %s: %w", dir, err)
+			results <- result
+			continue
+		}
+
+		// Sync the page
+		if err := e.SyncNotionToFile(ctx, job.page.ID, job.filePath); err != nil {
+			result.err = fmt.Errorf("failed to sync page %s: %w", job.page.ID, err)
+		} else {
+			fmt.Printf("  ✓ Successfully pulled %s\n", job.title)
+		}
+
+		results <- result
+	}
 }
 
 func (e *engine) syncBidirectional(ctx context.Context) error {
@@ -544,23 +627,23 @@ func (e *engine) exportChildDatabases(ctx context.Context, pageID, filePath, pag
 	}
 
 	databaseCount := 0
-	
+
 	// Check blocks for child_database type
 	for _, block := range blocks {
 		if block.Type == "child_database" {
 			databaseCount++
-			
+
 			// Debug: print block structure
 			fmt.Printf("  Debug: Found child_database block, ID: %s\n", block.ID)
-			
+
 			// Try to extract database ID - it might be the block ID itself
 			databaseID := block.ID
-			
+
 			// Also check if we have the ChildDatabase field populated
 			if block.ChildDatabase != nil && block.ChildDatabase.DatabaseID != "" {
 				databaseID = block.ChildDatabase.DatabaseID
 			}
-			
+
 			if databaseID == "" {
 				fmt.Printf("  Warning: Found child_database block but couldn't extract database ID\n")
 				continue
@@ -570,7 +653,7 @@ func (e *engine) exportChildDatabases(ctx context.Context, pageID, filePath, pag
 			baseDir := filepath.Dir(filePath)
 			dbTitle := fmt.Sprintf("Database %d", databaseCount)
 			var csvFileName string
-			
+
 			if database, err := e.notion.GetDatabase(ctx, databaseID); err == nil {
 				if len(database.Title) > 0 && database.Title[0].PlainText != "" {
 					dbTitle = database.Title[0].PlainText
@@ -588,12 +671,12 @@ func (e *engine) exportChildDatabases(ctx context.Context, pageID, filePath, pag
 				sanitizedTitle := e.sanitizeFilename(pageTitle)
 				csvFileName = fmt.Sprintf("%s_db%d.csv", sanitizedTitle, databaseCount)
 			}
-			
+
 			csvPath := filepath.Join(baseDir, csvFileName)
 
 			// Export database to CSV
 			fmt.Printf("  Exporting database '%s' to: %s\n", dbTitle, csvFileName)
-			
+
 			// Create database sync instance and export
 			dbSync := NewDatabaseSync(e.notion)
 			if err := dbSync.SyncNotionDatabaseToCSV(ctx, databaseID, csvPath); err != nil {
@@ -624,7 +707,7 @@ func (e *engine) addDatabaseReferences(content string, databaseRefs []DatabaseRe
 
 	// Add database references at the end of the content
 	content += "\n\n## Databases\n\n"
-	
+
 	for _, ref := range databaseRefs {
 		content += fmt.Sprintf("- [%s](./%s)\n", ref.Title, ref.CSVPath)
 	}
@@ -645,14 +728,14 @@ func (e *engine) sanitizeFilename(filename string) string {
 	filename = strings.ReplaceAll(filename, ">", "_")
 	filename = strings.ReplaceAll(filename, "|", "_")
 	filename = strings.ReplaceAll(filename, " ", "_")
-	
+
 	// Remove any leading/trailing dots or spaces
 	filename = strings.Trim(filename, ". ")
-	
+
 	// Ensure it's not empty
 	if filename == "" {
 		filename = "untitled"
 	}
-	
+
 	return filename
 }

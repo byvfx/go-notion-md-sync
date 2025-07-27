@@ -18,7 +18,7 @@ var rootCmd = &cobra.Command{
 	Long: `notion-md-sync is a CLI tool that synchronizes markdown files with Notion pages.
 It supports bidirectional synchronization, allowing you to push changes from markdown
 to Notion or pull changes from Notion to markdown files.`,
-	Version: "1.0.0",
+	Version: "0.14.0",
 }
 
 func Execute() error {

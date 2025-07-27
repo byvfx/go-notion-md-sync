@@ -74,22 +74,22 @@ type Block struct {
 	HasChildren bool      `json:"has_children,omitempty"`
 
 	// Block type specific content - these are mutually exclusive based on Type
-	Paragraph        *RichTextBlock `json:"paragraph,omitempty"`
-	Heading1         *RichTextBlock `json:"heading_1,omitempty"`
-	Heading2         *RichTextBlock `json:"heading_2,omitempty"`
-	Heading3         *RichTextBlock `json:"heading_3,omitempty"`
-	BulletedListItem *RichTextBlock `json:"bulleted_list_item,omitempty"`
-	NumberedListItem *RichTextBlock `json:"numbered_list_item,omitempty"`
-	Code             *CodeBlock     `json:"code,omitempty"`
-	Quote            *RichTextBlock `json:"quote,omitempty"`
-	Table            *TableBlock    `json:"table,omitempty"`
-	TableRow         *TableRowBlock `json:"table_row,omitempty"`
-	Image            *ImageBlock    `json:"image,omitempty"`
-	Callout          *CalloutBlock  `json:"callout,omitempty"`
-	Toggle           *ToggleBlock   `json:"toggle,omitempty"`
-	Bookmark         *BookmarkBlock     `json:"bookmark,omitempty"`
-	Divider          *DividerBlock      `json:"divider,omitempty"`
-	Equation         *EquationBlock     `json:"equation,omitempty"`
+	Paragraph        *RichTextBlock      `json:"paragraph,omitempty"`
+	Heading1         *RichTextBlock      `json:"heading_1,omitempty"`
+	Heading2         *RichTextBlock      `json:"heading_2,omitempty"`
+	Heading3         *RichTextBlock      `json:"heading_3,omitempty"`
+	BulletedListItem *RichTextBlock      `json:"bulleted_list_item,omitempty"`
+	NumberedListItem *RichTextBlock      `json:"numbered_list_item,omitempty"`
+	Code             *CodeBlock          `json:"code,omitempty"`
+	Quote            *RichTextBlock      `json:"quote,omitempty"`
+	Table            *TableBlock         `json:"table,omitempty"`
+	TableRow         *TableRowBlock      `json:"table_row,omitempty"`
+	Image            *ImageBlock         `json:"image,omitempty"`
+	Callout          *CalloutBlock       `json:"callout,omitempty"`
+	Toggle           *ToggleBlock        `json:"toggle,omitempty"`
+	Bookmark         *BookmarkBlock      `json:"bookmark,omitempty"`
+	Divider          *DividerBlock       `json:"divider,omitempty"`
+	Equation         *EquationBlock      `json:"equation,omitempty"`
 	ChildDatabase    *ChildDatabaseBlock `json:"child_database,omitempty"`
 
 	// For unknown block types, keep the raw content
