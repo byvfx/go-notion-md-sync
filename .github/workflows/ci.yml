@@ -18,13 +18,15 @@ jobs:
       with:
         go-version: '1.23'
 
-    - name: Clear Go module cache directory
-      run: rm -rf ~/go/pkg/mod
+    - name: Clean Go Module Cache before restoring
+      run: rm -rf $HOME/go/pkg/mod
 
     - name: Cache Go modules
       uses: actions/cache@v4
       with:
-        path: ~/go/pkg/mod
+        path: |
+          ~/.cache/go-build
+          $HOME/go/pkg/mod
         key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           ${{ runner.os }}-go-
