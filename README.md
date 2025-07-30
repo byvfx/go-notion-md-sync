@@ -66,62 +66,68 @@ A powerful CLI tool for synchronizing markdown files with Notion pages. Built wi
 
 ## Quick Start
 
-> **New to this?** Use our automated setup: `make setup` then `make validate`
-
-### 1. Installation
+### 1. 📥 Installation
 
 #### Quick Install (Recommended)
 
-**Windows (PowerShell):**
+**Windows (PowerShell - Run as Administrator):**
 ```powershell
 iwr -useb https://raw.githubusercontent.com/byvfx/go-notion-md-sync/main/scripts/install-windows.ps1 | iex
 ```
+> **📍 Installation Location**: `%LOCALAPPDATA%\notion-md-sync\`  
+> **💡 After install**: Restart your terminal, then navigate to your project folder
 
 **Linux/macOS:**
 ```bash
 curl -sSL https://raw.githubusercontent.com/byvfx/go-notion-md-sync/main/scripts/install-unix.sh | bash
 ```
 
-#### Manual Installation
-Download from [GitHub Releases](https://github.com/byvfx/go-notion-md-sync/releases) and extract to your PATH.
-
-#### Build from Source
-```bash
-git clone https://github.com/byvfx/go-notion-md-sync.git
-cd go-notion-md-sync
-make build
+#### 🗑️ Uninstall (Windows)
+```powershell
+iwr -useb https://raw.githubusercontent.com/byvfx/go-notion-md-sync/main/scripts/uninstall-windows.ps1 | iex
 ```
 
-**Detailed installation guide**: [INSTALLATION.md](docs/guides/INSTALLATION.md)
+#### Other Options
+- **Manual**: Download from [GitHub Releases](https://github.com/byvfx/go-notion-md-sync/releases) and extract to your PATH
+- **Source**: `git clone https://github.com/byvfx/go-notion-md-sync.git && cd go-notion-md-sync && make build`
 
-### 2. Setup Notion Integration
-
-1. **Create a Notion Integration**:
-   - Go to [https://www.notion.so/my-integrations](https://www.notion.so/my-integrations)
-   - Click "Create new integration"
-   - Give it a name (e.g., "Markdown Sync")
-   - Copy the "Internal Integration Token"
-
-2. **Share a Notion Page**:
-   - Create or open a Notion page that will be your "parent" page
-   - Click "Share" → "Invite" → Add your integration
-   - Copy the page ID from the URL (the long string after the last `/`)
-
-### 3. Initialize Your Project
+### 2. 🚀 Quick Setup (Easiest Way)
 
 ```bash
-# Navigate to your project directory
-cd my-notion-project
+# 1. Navigate to your project folder
+cd C:\your\project\folder
 
-# Initialize configuration and sample files
+# 2. Initialize with guided setup (will walk you through everything!)
 notion-md-sync init
 ```
 
-This creates:
-- `config.yaml` - Main configuration
-- `.env` - Your Notion credentials (edit this!)
-- `docs/welcome.md` - Sample markdown file
-- `.env.example` - Template for sharing
+**What `init` does:**
+- 📋 **Guides you step-by-step** through Notion integration setup
+- 🔑 **You can copy/paste** your token and page ID (no more typing!)
+- 📁 **Shows exact file paths** where everything is created
+- ✅ **Creates all necessary files** in your project directory
+
+**Files created in your project:**
+- `config.yaml` - Main configuration  
+- `.env` - Your Notion credentials (ready to use!)
+- `docs/welcome.md` - Sample markdown file to test with
+- `.env.example` - Template for sharing with others
+
+### 3. 📚 Manual Setup (Alternative)
+
+If you prefer to set up manually:
+
+1. **Create Notion Integration**: [notion.so/my-integrations](https://www.notion.so/my-integrations)
+   - Click "Create new integration" 
+   - Name it (e.g., "Markdown Sync")
+   - Copy the "Internal Integration Token"
+
+2. **Prepare Parent Page**:
+   - Open your Notion page in browser
+   - Click "Share" → "Invite" → Add your integration  
+   - Copy page ID from URL (long string after last `/`)
+
+3. **Create Config Files**: Use the templates in `config/` directory
 
 #### Edit Your Credentials
 Edit the `.env` file with your actual Notion credentials:

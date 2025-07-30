@@ -24,48 +24,87 @@ func init() {
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
+	// Get current working directory for display
+	currentDir, err := os.Getwd()
+	if err != nil {
+		currentDir = "current directory"
+	}
+
 	fmt.Println("🚀 Initializing notion-md-sync project...")
+	fmt.Printf("📍 Working in: %s\n\n", currentDir)
 
 	// Check if already initialized
+	configPath := filepath.Join(currentDir, "config.yaml")
 	if _, err := os.Stat("config.yaml"); err == nil {
-		fmt.Println("⚠️  Project already initialized (config.yaml exists)")
+		fmt.Printf("⚠️  Project already initialized!\n")
+		fmt.Printf("📄 Found existing config: %s\n", configPath)
+		
+		// Show existing .env file location if it exists
+		envPath := filepath.Join(currentDir, ".env")
+		if _, err := os.Stat(".env"); err == nil {
+			fmt.Printf("🔑 Found existing credentials: %s\n", envPath)
+		} else {
+			fmt.Printf("💡 You can create credentials at: %s\n", envPath)
+		}
+		
+		fmt.Println("\n✅ Your project is ready to use!")
+		fmt.Println("📚 Next steps:")
+		fmt.Println("   • Run: notion-md-sync pull --verbose")
+		fmt.Println("   • Or: notion-md-sync push --verbose")
+		fmt.Println("   • Or: notion-md-sync --help")
 		return nil
 	}
 
 	reader := bufio.NewReader(os.Stdin)
 
+	fmt.Println("🔧 Let's set up your Notion integration...")
+	fmt.Println()
+
 	// Get Notion token
 	var token string
 	for {
-		fmt.Print("Enter your Notion Integration Token: ")
+		fmt.Println("🔑 Step 1: Notion Integration Token")
+		fmt.Println("   Get yours at: https://www.notion.so/my-integrations")
+		fmt.Println("   Create a new integration and copy the 'Internal Integration Token'")
+		fmt.Print("\n📋 Paste your token here (you can copy/paste): ")
 		token, _ = reader.ReadString('\n')
 		token = strings.TrimSpace(token)
 
 		if err := util.ValidateNotionToken(token); err != nil {
 			fmt.Printf("❌ Invalid token: %v\n", err)
+			fmt.Println("   💡 Token should start with 'secret_' and be ~50 characters")
 			continue
 		}
+		fmt.Println("✅ Valid token!")
 		break
 	}
 
 	// Get parent page ID
 	var pageID string
 	for {
-		fmt.Print("Enter your Notion Parent Page ID: ")
+		fmt.Println("\n📄 Step 2: Parent Page ID")
+		fmt.Println("   1. Open your Notion page in browser")
+		fmt.Println("   2. Share the page with your integration")
+		fmt.Println("   3. Copy the page ID from the URL (long string after last '/')")
+		fmt.Print("\n📋 Paste your page ID here: ")
 		pageID, _ = reader.ReadString('\n')
 		pageID = strings.TrimSpace(pageID)
 
 		if err := util.ValidateNotionPageID(pageID); err != nil {
 			fmt.Printf("❌ Invalid page ID: %v\n", err)
+			fmt.Println("   💡 Should be a 32-character string with dashes")
 			continue
 		}
+		fmt.Println("✅ Valid page ID!")
 		break
 	}
 
 	// Get markdown directory
 	var markdownDir string
 	for {
-		fmt.Print("Markdown directory (default: ./docs): ")
+		fmt.Println("\n📂 Step 3: Markdown Directory")
+		fmt.Println("   Where should we store your markdown files?")
+		fmt.Print("   Directory path (default: ./docs): ")
 		markdownDir, _ = reader.ReadString('\n')
 		markdownDir = strings.TrimSpace(markdownDir)
 		if markdownDir == "" {
@@ -76,6 +115,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 			fmt.Printf("❌ Invalid directory path: %v\n", err)
 			continue
 		}
+		fmt.Printf("✅ Will create directory: %s\n", markdownDir)
 		break
 	}
 
@@ -163,23 +203,33 @@ Happy syncing! 🚀
 		return fmt.Errorf("failed to create sample file: %w", err)
 	}
 
-	// Success message
+	// Success message with full paths
+	configFullPath := filepath.Join(currentDir, "config.yaml")
+	envFullPath := filepath.Join(currentDir, ".env")
+	envExampleFullPath := filepath.Join(currentDir, ".env.example")
+	sampleFullPath := filepath.Join(currentDir, samplePath)
+	markdownFullPath := filepath.Join(currentDir, markdownDir)
+
 	fmt.Println("\n✅ Project initialized successfully!")
 	fmt.Println("\n📁 Created files:")
-	fmt.Println("   - config.yaml (configuration)")
-	fmt.Println("   - .env (your credentials)")
-	fmt.Println("   - .env.example (template)")
-	fmt.Printf("   - %s (sample markdown)\n", samplePath)
-	fmt.Printf("   - %s/ (markdown directory)\n", markdownDir)
+	fmt.Printf("   📄 %s (configuration)\n", configFullPath)
+	fmt.Printf("   🔑 %s (your credentials)\n", envFullPath)
+	fmt.Printf("   📋 %s (template)\n", envExampleFullPath)
+	fmt.Printf("   📝 %s (sample markdown)\n", sampleFullPath)
+	fmt.Printf("   📂 %s/ (markdown directory)\n", markdownFullPath)
 
-	fmt.Println("\n🔑 Next steps:")
-	fmt.Println("   1. Edit .env with your actual Notion credentials")
-	fmt.Println("   2. Test with: notion-md-sync push --verbose")
-	fmt.Println("   3. Start syncing: notion-md-sync watch")
+	fmt.Println("\n💡 Your credentials are ready!")
+	fmt.Println("   Your Notion token and page ID have been saved to .env")
+	fmt.Printf("   You can edit them anytime at: %s\n", envFullPath)
+
+	fmt.Println("\n🚀 Ready to sync!")
+	fmt.Println("   • Test connection: notion-md-sync pull --verbose")
+	fmt.Println("   • Push sample file: notion-md-sync push --verbose")  
+	fmt.Println("   • Auto-sync changes: notion-md-sync watch")
 
 	fmt.Println("\n📚 Need help?")
-	fmt.Println("   - Run: notion-md-sync --help")
-	fmt.Println("   - Visit: https://github.com/byvfx/go-notion-md-sync")
+	fmt.Println("   • All commands: notion-md-sync --help")
+	fmt.Println("   • Documentation: https://github.com/byvfx/go-notion-md-sync")
 
 	return nil
 }

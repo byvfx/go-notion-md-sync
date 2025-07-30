@@ -68,14 +68,24 @@ $binaryPath = Join-Path $InstallDir "notion-md-sync.exe"
 if (Test-Path $binaryPath) {
     Write-Host "✅ Installation successful!" -ForegroundColor Green
     Write-Host ""
-    Write-Host "Binary installed at: $binaryPath"
+    Write-Host "📍 Installation Details:" -ForegroundColor Cyan
+    Write-Host "   Binary location: $binaryPath" -ForegroundColor Gray
+    Write-Host "   Added to PATH: $InstallDir" -ForegroundColor Gray
     Write-Host ""
-    Write-Host "🎯 Next steps:"
-    Write-Host "   1. Restart your terminal or run: refreshenv"
-    Write-Host "   2. Create a project: notion-md-sync init"
-    Write-Host "   3. Pull down your notion page: notion-md-sync pull"
+    Write-Host "🎯 Next Steps:" -ForegroundColor Yellow
+    Write-Host "   1. 🔄 Restart your terminal (or run: refreshenv)" -ForegroundColor White
+    Write-Host "   2. 📁 Navigate to your project folder: cd C:\path\to\your\project" -ForegroundColor White
+    Write-Host "   3. 🚀 Initialize project: notion-md-sync init" -ForegroundColor White
+    Write-Host "      (This will guide you through setup and create config files)" -ForegroundColor Gray
+    Write-Host "   4. 📥 Pull your Notion pages: notion-md-sync pull" -ForegroundColor White
     Write-Host ""
-    Write-Host "📚 For help, run: notion-md-sync --help"
+    Write-Host "💡 Tips:" -ForegroundColor Magenta
+    Write-Host "   • Your config files will be created in your project directory" -ForegroundColor Gray
+    Write-Host "   • You can copy/paste your Notion token and page ID during init" -ForegroundColor Gray
+    Write-Host "   • Use 'notion-md-sync --help' for all commands" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "🗑️  To uninstall later, run the uninstall script:" -ForegroundColor DarkGray
+    Write-Host "   iwr -useb https://raw.githubusercontent.com/byvfx/go-notion-md-sync/main/scripts/uninstall-windows.ps1 | iex" -ForegroundColor DarkGray
 } else {
     Write-Error "Installation failed - binary not found at $binaryPath"
     exit 1
