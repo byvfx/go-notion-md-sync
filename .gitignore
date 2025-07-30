@@ -27,6 +27,8 @@ go.work.sum
 # Environment files and config with secrets
 .env
 config/config.yaml
+config/config.optimized.yaml
+config/*.yaml
 
 # Local state and staging (user-specific)
 .notion-sync/
