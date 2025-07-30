@@ -1,6 +1,9 @@
 package cli
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/byvfx/go-notion-md-sync/pkg/util"
 	"github.com/spf13/cobra"
 )
@@ -44,5 +47,11 @@ func init() {
 }
 
 func printVerbose(format string, args ...interface{}) {
-	util.Debug(format, args...)
+	if verbose {
+		msg := format
+		if len(args) > 0 {
+			msg = fmt.Sprintf(format, args...)
+		}
+		fmt.Fprintf(os.Stderr, "[VERBOSE] %s\n", msg)
+	}
 }
