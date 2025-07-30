@@ -19,7 +19,11 @@ jobs:
         go-version: '1.23'
 
     - name: Clean Go Module Cache before restoring
-      run: rm -rf $HOME/go/pkg/mod
+      run: |
+        if [ -d "$HOME/go/pkg/mod" ]; then
+          chmod -R +w "$HOME/go/pkg/mod" 2>/dev/null || true
+          rm -rf "$HOME/go/pkg/mod"
+        fi
 
     - name: Cache Go modules
       uses: actions/cache@v4
