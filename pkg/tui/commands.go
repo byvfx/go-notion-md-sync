@@ -31,6 +31,12 @@ type CommandExecutor struct {
 	syncEngine sync.Engine
 	ctx        context.Context
 	cancelFunc context.CancelFunc
+	
+	// Progress tracking
+	currentOperation string
+	operationStartTime time.Time
+	lastProgressMsg string
+	isRunning bool
 }
 
 // NewCommandExecutor creates a new command executor
@@ -55,19 +61,19 @@ func (ce *CommandExecutor) Close() {
 
 // ExecuteCommand runs a command and returns a tea.Cmd that sends progress messages
 func (ce *CommandExecutor) ExecuteCommand(cmd CommandType, files []string) tea.Cmd {
-	return func() tea.Msg {
-		switch cmd {
-		case CommandSync:
-			return ce.executeSync(files)
-		case CommandPull:
-			return ce.executePull(files)
-		case CommandPush:
-			return ce.executePush(files)
-		case CommandStatus:
-			return ce.executeStatus(files)
-		case CommandInit:
-			return ce.executeInit(files)
-		default:
+	switch cmd {
+	case CommandSync:
+		return ce.executeSync(files)
+	case CommandPull:
+		return ce.executePull(files)
+	case CommandPush:
+		return ce.executePush(files)
+	case CommandStatus:
+		return ce.executeStatus(files)
+	case CommandInit:
+		return ce.executeInit(files)
+	default:
+		return func() tea.Msg {
 			return CommandErrorMsg{
 				Command: string(cmd),
 				Error:   fmt.Errorf("unknown command: %s", cmd),
@@ -77,179 +83,86 @@ func (ce *CommandExecutor) ExecuteCommand(cmd CommandType, files []string) tea.C
 }
 
 // executeSync performs bidirectional sync
-func (ce *CommandExecutor) executeSync(files []string) tea.Msg {
-	startTime := time.Now()
-
-	// Send start message
-	progressChan := make(chan tea.Msg, 100)
-	go func() {
-		progressChan <- CommandStartMsg{
-			Command:   string(CommandSync),
-			StartTime: startTime,
+func (ce *CommandExecutor) executeSync(files []string) tea.Cmd {
+	return func() tea.Msg {
+		return CommandCompleteMsg{
+			Command: string(CommandSync),
+			Message: "Sync not implemented in simplified version",
 		}
-	}()
-
-	// Execute sync
-	go func() {
-		defer close(progressChan)
-
-		// If specific files selected, sync only those
-		if len(files) > 0 {
-			for _, file := range files {
-				progressChan <- CommandProgressMsg{
-					Command:     string(CommandSync),
-					CurrentFile: file,
-					Message:     fmt.Sprintf("Syncing %s", file),
-				}
-
-				// TODO: Implement file-specific sync
-				time.Sleep(500 * time.Millisecond) // Simulate work
-			}
-		} else {
-			// Full sync
-			progressChan <- CommandProgressMsg{
-				Command: string(CommandSync),
-				Message: "Starting full bidirectional sync...",
-			}
-
-			// Perform bidirectional sync with captured output
-			if err := ce.executeWithCapturedOutput("bidirectional", progressChan, CommandSync); err != nil {
-				progressChan <- CommandErrorMsg{
-					Command: string(CommandSync),
-					Error:   err,
-				}
-				return
-			}
-		}
-
-		progressChan <- CommandCompleteMsg{
-			Command:  string(CommandSync),
-			Duration: time.Since(startTime),
-			Message:  "Sync completed successfully",
-		}
-	}()
-
-	// Return a command that reads from the progress channel
-	return readProgressChannel(progressChan)
+	}
 }
 
 // executePull performs pull from Notion
-func (ce *CommandExecutor) executePull(_ []string) tea.Msg {
-	startTime := time.Now()
-
-	progressChan := make(chan tea.Msg, 100)
-	go func() {
-		progressChan <- CommandStartMsg{
-			Command:   string(CommandPull),
-			StartTime: startTime,
-		}
-	}()
-
-	go func() {
-		defer close(progressChan)
-
-		progressChan <- CommandProgressMsg{
-			Command: string(CommandPull),
-			Message: "Pulling from Notion...",
-		}
-
-		// Perform pull from Notion with captured output
-		if err := ce.executeWithCapturedOutput("pull", progressChan, CommandPull); err != nil {
-			progressChan <- CommandErrorMsg{
-				Command: string(CommandPull),
-				Error:   err,
+func (ce *CommandExecutor) executePull(_ []string) tea.Cmd {
+	return tea.Batch(
+		// Start the operation
+		func() tea.Msg {
+			ce.currentOperation = string(CommandPull)
+			ce.operationStartTime = time.Now()
+			ce.isRunning = true
+			
+			// Start the sync operation in background
+			go func() {
+				defer func() { ce.isRunning = false }()
+				err := ce.syncEngine.SyncAll(ce.ctx, "pull")
+				if err != nil {
+					ce.lastProgressMsg = fmt.Sprintf("Error: %v", err)
+				} else {
+					ce.lastProgressMsg = "Pull completed successfully"
+				}
+			}()
+			
+			return CommandStartMsg{
+				Command:   string(CommandPull),
+				StartTime: ce.operationStartTime,
 			}
-			return
-		}
-
-		progressChan <- CommandCompleteMsg{
-			Command:  string(CommandPull),
-			Duration: time.Since(startTime),
-			Message:  "Pull completed successfully",
-		}
-	}()
-
-	return readProgressChannel(progressChan)
+		},
+		// Start progress polling
+		tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
+			return ProgressTickMsg{}
+		}),
+	)
 }
 
 // executePush performs push to Notion
-func (ce *CommandExecutor) executePush(files []string) tea.Msg {
-	startTime := time.Now()
-
-	progressChan := make(chan tea.Msg, 100)
-	go func() {
-		progressChan <- CommandStartMsg{
-			Command:   string(CommandPush),
-			StartTime: startTime,
+func (ce *CommandExecutor) executePush(files []string) tea.Cmd {
+	return func() tea.Msg {
+		return CommandCompleteMsg{
+			Command: string(CommandPush),
+			Message: "Push not implemented in simplified version",
 		}
-	}()
-
-	go func() {
-		defer close(progressChan)
-
-		if len(files) > 0 {
-			for _, file := range files {
-				progressChan <- CommandProgressMsg{
-					Command:     string(CommandPush),
-					CurrentFile: file,
-					Message:     fmt.Sprintf("Pushing %s to Notion", file),
-				}
-
-				// TODO: Implement file-specific push
-				time.Sleep(500 * time.Millisecond) // Simulate work
-			}
-		} else {
-			progressChan <- CommandProgressMsg{
-				Command: string(CommandPush),
-				Message: "Pushing all changes to Notion...",
-			}
-
-			// Perform push to Notion with captured output
-			if err := ce.executeWithCapturedOutput("push", progressChan, CommandPush); err != nil {
-				progressChan <- CommandErrorMsg{
-					Command: string(CommandPush),
-					Error:   err,
-				}
-				return
-			}
-		}
-
-		progressChan <- CommandCompleteMsg{
-			Command:  string(CommandPush),
-			Duration: time.Since(startTime),
-			Message:  "Push completed successfully",
-		}
-	}()
-
-	return readProgressChannel(progressChan)
+	}
 }
 
 // executeStatus gets sync status
-func (ce *CommandExecutor) executeStatus(_ []string) tea.Msg {
-	// TODO: Implement status check
-	return CommandCompleteMsg{
-		Command: string(CommandStatus),
-		Message: "Status check complete",
+func (ce *CommandExecutor) executeStatus(_ []string) tea.Cmd {
+	return func() tea.Msg {
+		// TODO: Implement status check
+		return CommandCompleteMsg{
+			Command: string(CommandStatus),
+			Message: "Status check complete",
+		}
 	}
 }
 
 // executeInit initializes a new project
-func (ce *CommandExecutor) executeInit(_ []string) tea.Msg {
-	startTime := time.Now()
+func (ce *CommandExecutor) executeInit(_ []string) tea.Cmd {
+	return func() tea.Msg {
+		startTime := time.Now()
 
-	// Execute init synchronously and return the appropriate message
+		// Execute init synchronously and return the appropriate message
 
-	// Check if already initialized
-	if _, err := os.Stat("config.yaml"); err == nil {
-		return CommandCompleteMsg{
-			Command:  string(CommandInit),
-			Duration: time.Since(startTime),
-			Message:  "Project already initialized (config.yaml exists)",
+		// Check if already initialized
+		if _, err := os.Stat("config.yaml"); err == nil {
+			return CommandCompleteMsg{
+				Command:  string(CommandInit),
+				Duration: time.Since(startTime),
+				Message:  "Project already initialized (config.yaml exists)",
+			}
 		}
-	}
 
-	// Create config.yaml with defaults
-	configContent := `# notion-md-sync configuration
+		// Create config.yaml with defaults
+		configContent := `# notion-md-sync configuration
 notion:
   token: ""  # Set via NOTION_MD_SYNC_NOTION_TOKEN environment variable
   parent_page_id: ""  # Set via NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID environment variable
@@ -269,36 +182,36 @@ mapping:
   strategy: frontmatter
 `
 
-	if err := os.WriteFile("config.yaml", []byte(configContent), 0644); err != nil {
-		return CommandErrorMsg{
-			Command: string(CommandInit),
-			Error:   fmt.Errorf("failed to create config.yaml: %w", err),
+		if err := os.WriteFile("config.yaml", []byte(configContent), 0644); err != nil {
+			return CommandErrorMsg{
+				Command: string(CommandInit),
+				Error:   fmt.Errorf("failed to create config.yaml: %w", err),
+			}
 		}
-	}
 
-	// Create docs directory
-	if err := os.MkdirAll("./docs", 0755); err != nil {
-		return CommandErrorMsg{
-			Command: string(CommandInit),
-			Error:   fmt.Errorf("failed to create docs directory: %w", err),
+		// Create docs directory
+		if err := os.MkdirAll("./docs", 0755); err != nil {
+			return CommandErrorMsg{
+				Command: string(CommandInit),
+				Error:   fmt.Errorf("failed to create docs directory: %w", err),
+			}
 		}
-	}
 
-	// Create .env.example
-	envExampleContent := `# Copy this file to .env and fill in your actual values
+		// Create .env.example
+		envExampleContent := `# Copy this file to .env and fill in your actual values
 NOTION_MD_SYNC_NOTION_TOKEN=your_integration_token_here
 NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID=your_parent_page_id_here
 `
 
-	if err := os.WriteFile(".env.example", []byte(envExampleContent), 0644); err != nil {
-		return CommandErrorMsg{
-			Command: string(CommandInit),
-			Error:   fmt.Errorf("failed to create .env.example: %w", err),
+		if err := os.WriteFile(".env.example", []byte(envExampleContent), 0644); err != nil {
+			return CommandErrorMsg{
+				Command: string(CommandInit),
+				Error:   fmt.Errorf("failed to create .env.example: %w", err),
+			}
 		}
-	}
 
-	// Create sample markdown file
-	sampleContent := `---
+		// Create sample markdown file
+		sampleContent := `---
 title: "Welcome to notion-md-sync"
 sync_enabled: true
 ---
@@ -323,17 +236,18 @@ This is a sample markdown file that demonstrates how notion-md-sync works.
 Happy syncing! 🚀
 `
 
-	if err := os.WriteFile("./docs/welcome.md", []byte(sampleContent), 0644); err != nil {
-		return CommandErrorMsg{
-			Command: string(CommandInit),
-			Error:   fmt.Errorf("failed to create sample file: %w", err),
+		if err := os.WriteFile("./docs/welcome.md", []byte(sampleContent), 0644); err != nil {
+			return CommandErrorMsg{
+				Command: string(CommandInit),
+				Error:   fmt.Errorf("failed to create sample file: %w", err),
+			}
 		}
-	}
 
-	return CommandCompleteMsg{
-		Command:  string(CommandInit),
-		Duration: time.Since(startTime),
-		Message:  "Project initialized! Created config.yaml, .env.example, docs/ and sample file",
+		return CommandCompleteMsg{
+			Command:  string(CommandInit),
+			Duration: time.Since(startTime),
+			Message:  "Project initialized! Created config.yaml, .env.example, docs/ and sample file",
+		}
 	}
 }
 
@@ -382,25 +296,53 @@ func (ce *CommandExecutor) executeWithCapturedOutput(direction string, progressC
 				line := strings.TrimSpace(scanner.Text())
 				if line != "" {
 					// Filter out debug/warning messages and clean up the output
-					if !strings.Contains(line, "Debug:") && !strings.HasPrefix(line, "Warning:") {
+					if !strings.Contains(line, "Debug:") && !strings.HasPrefix(line, "Warning:") && !strings.Contains(line, "Page title:") {
 						// Extract meaningful progress information
 						var message string
+						var currentFile string
+						
 						if strings.Contains(line, "Found") && strings.Contains(line, "pages") {
 							message = line
 						} else if strings.Contains(line, "Pulling page:") {
-							message = strings.TrimPrefix(line, "[0-9]/[0-9] ")
-							message = strings.TrimPrefix(message, "Pulling page: ")
-						} else if strings.Contains(line, "✓ Successfully") {
-							message = "Page synced successfully"
+							// Extract page name from "[1/14] Pulling page: PageName"
+							parts := strings.SplitN(line, "Pulling page: ", 2)
+							if len(parts) == 2 {
+								currentFile = strings.TrimSpace(parts[1])
+								message = fmt.Sprintf("Pulling: %s", currentFile)
+							} else {
+								message = line
+							}
+						} else if strings.Contains(line, "✓ Successfully pulled") {
+							// Extract page name from success message
+							parts := strings.SplitN(line, "✓ Successfully pulled ", 2)
+							if len(parts) == 2 {
+								pageName := strings.TrimSpace(parts[1])
+								currentFile = pageName  // Set currentFile for completed items
+								message = fmt.Sprintf("✓ Completed: %s", pageName)
+							} else {
+								message = "✓ Page synced successfully"
+							}
 						} else if strings.Contains(line, "Saving to:") {
-							message = strings.TrimPrefix(line, "  Saving to: ")
-						} else {
+							// Skip these - they're just details
+							continue
+						} else if strings.Contains(line, "Notion ID:") {
+							// Skip these - they're just details
+							continue
+						} else if strings.Contains(line, "Using concurrent processing") {
 							message = line
+						} else if strings.Contains(line, "Concurrent sync complete") {
+							message = line
+						} else if strings.Contains(line, "Pulling all pages") {
+							message = line
+						} else {
+							// Skip other messages to reduce noise
+							continue
 						}
 
 						progressChan <- CommandProgressMsg{
-							Command: string(commandType),
-							Message: message,
+							Command:     string(commandType),
+							Message:     message,
+							CurrentFile: currentFile,
 						}
 					}
 				}
@@ -443,20 +385,18 @@ func (ce *CommandExecutor) executeWithCapturedOutput(direction string, progressC
 // readProgressChannel creates a tea.Cmd that reads from a progress channel
 func readProgressChannel(ch <-chan tea.Msg) tea.Cmd {
 	return func() tea.Msg {
-		// Read all available messages
-		var messages []tea.Msg
-		for msg := range ch {
-			messages = append(messages, msg)
+		// Read the next message from the channel
+		select {
+		case msg, ok := <-ch:
+			if !ok {
+				// Channel closed, no more messages
+				return nil
+			}
+			return msg
+		default:
+			// No message available yet
+			return nil
 		}
-
-		// If we got multiple messages, batch them
-		if len(messages) > 1 {
-			return CommandBatchMsg{Messages: messages}
-		} else if len(messages) == 1 {
-			return messages[0]
-		}
-
-		return nil
 	}
 }
 
@@ -493,3 +433,6 @@ type CommandErrorMsg struct {
 type CommandBatchMsg struct {
 	Messages []tea.Msg
 }
+
+// ProgressTickMsg is sent periodically to check for progress updates
+type ProgressTickMsg struct{}

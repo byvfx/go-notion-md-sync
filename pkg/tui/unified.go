@@ -60,15 +60,8 @@ func NewUnifiedView() UnifiedView {
 	l.SetShowHelp(false)
 	l.DisableQuitKeybindings()
 
-	// Mock sync operation
-	syncOps := []SyncOperation{
-		{
-			FileName:    "Table Page.md",
-			Status:      "Converting table blocks",
-			Progress:    0.6,
-			ElapsedTime: time.Duration(2300) * time.Millisecond, // 2.3s
-		},
-	}
+	// Start with empty sync operations (no mock data)
+	syncOps := []SyncOperation{}
 
 	return UnifiedView{
 		fileList:      l,
@@ -85,7 +78,7 @@ func NewUnifiedView() UnifiedView {
 			synced:  3,
 			pending: 1,
 			errors:  1,
-			today:   15,
+			today:   0,
 		},
 		selectedFiles: make(map[string]bool),
 		focusedPane:   0,
@@ -152,6 +145,7 @@ func (v UnifiedView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !v.syncing {
 				v.syncing = true
 				v.syncProgress = "Starting sync..."
+				v.syncOps = []SyncOperation{} // Clear previous operations
 
 				// Get selected files
 				var selectedFiles []string
@@ -175,6 +169,7 @@ func (v UnifiedView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !v.syncing {
 				v.syncing = true
 				v.syncProgress = "Starting pull from Notion..."
+				v.syncOps = []SyncOperation{} // Clear previous operations
 
 				// Get selected files
 				var selectedFiles []string
@@ -198,6 +193,7 @@ func (v UnifiedView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !v.syncing {
 				v.syncing = true
 				v.syncProgress = "Starting push to Notion..."
+				v.syncOps = []SyncOperation{} // Clear previous operations
 
 				// Get selected files
 				var selectedFiles []string
@@ -259,6 +255,17 @@ func (v UnifiedView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		v.syncProgress = msg.Message
 		if msg.CurrentFile != "" {
 			v.updateFileStatus(msg.CurrentFile, StatusPending)
+			// For messages with CurrentFile set, extract the actual status from the message
+			status := "Processing"
+			if strings.Contains(msg.Message, "✓ Completed:") {
+				status = "Completed"
+			} else if strings.Contains(msg.Message, "Pulling:") {
+				status = "Pulling from Notion"
+			} else if strings.Contains(msg.Message, "Pushing:") {
+				status = "Pushing to Notion"
+			}
+			// Add or update sync operation for the current file
+			v.addOrUpdateSyncOperation(msg.CurrentFile, status)
 		}
 		return v, nil
 
@@ -268,6 +275,8 @@ func (v UnifiedView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		v.updateSyncOperation(msg.Command, "Completed", msg.Duration)
 		// Clear selection after successful sync and refresh file list
 		v.selectedFiles = make(map[string]bool)
+		// Update today's sync count
+		v.stats.today += len(v.syncOps)
 
 		// For all commands, refresh the file list
 		// (init creates new files, sync operations may change file status)
@@ -304,6 +313,36 @@ func (v UnifiedView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		v.errorMessage = ""
 		v.lastError = nil
 		return v, nil
+		
+	case ProgressTickMsg:
+		if v.executor != nil && v.executor.isRunning {
+			// Create progress message from executor state
+			elapsed := time.Since(v.executor.operationStartTime)
+			progressMsg := fmt.Sprintf("%s (%.1fs elapsed)", v.executor.currentOperation, elapsed.Seconds())
+			if v.executor.lastProgressMsg != "" {
+				progressMsg = v.executor.lastProgressMsg
+			}
+			
+			v.syncProgress = progressMsg
+			
+			// Continue ticking while operation is running
+			return v, tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
+				return ProgressTickMsg{}
+			})
+		} else if v.executor != nil && !v.executor.isRunning && v.syncing {
+			// Operation completed
+			v.syncing = false
+			if strings.Contains(v.executor.lastProgressMsg, "Error:") {
+				v.errorMessage = v.executor.lastProgressMsg
+				return v, v.clearErrorAfterDelay()
+			} else {
+				v.syncProgress = v.executor.lastProgressMsg
+				// Update today's sync count and refresh file list
+				v.stats.today++
+				return v, v.refreshFileList()
+			}
+		}
+		return v, nil
 	}
 
 	// Update the focused pane
@@ -318,8 +357,21 @@ func (v UnifiedView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View implements tea.Model
 func (v UnifiedView) View() string {
+	// Use fallback dimensions if not set
+	width := v.width
+	height := v.height
+	if width == 0 {
+		width = 120  // Default terminal width
+	}
+	if height == 0 {
+		height = 30  // Default terminal height
+	}
+	
+	// Update dimensions if they were using defaults
 	if v.width == 0 || v.height == 0 {
-		return "Loading..."
+		v.width = width
+		v.height = height
+		v.updatePaneSizes()
 	}
 
 	// Define styles
@@ -364,7 +416,7 @@ func (v UnifiedView) View() string {
 	headerContent := lipgloss.JoinHorizontal(
 		lipgloss.Left,
 		title,
-		strings.Repeat(" ", v.width-lipgloss.Width(title)-lipgloss.Width(connection)-4),
+		strings.Repeat(" ", width-lipgloss.Width(title)-lipgloss.Width(connection)-4),
 		connection,
 	)
 	header := headerStyle.Render(headerContent)
@@ -416,14 +468,23 @@ func (v UnifiedView) View() string {
 	)
 
 	// Apply border to entire UI
-	return borderStyle.Width(v.width - 2).Height(v.height - 2).Render(content)
+	return borderStyle.Width(width - 2).Height(height - 2).Render(content)
 }
 
 // updatePaneSizes calculates pane dimensions
 func (v *UnifiedView) updatePaneSizes() {
+	width := v.width
+	height := v.height
+	if width == 0 {
+		width = 120
+	}
+	if height == 0 {
+		height = 30
+	}
+	
 	// Account for borders and padding
-	contentWidth := v.width - 4
-	contentHeight := v.height - 6 // Header, footer, borders
+	contentWidth := width - 4
+	contentHeight := height - 6 // Header, footer, borders
 
 	// Split width evenly
 	paneWidth := contentWidth / 2
@@ -434,8 +495,18 @@ func (v *UnifiedView) updatePaneSizes() {
 
 // renderPane renders a single pane with title and content
 func (v UnifiedView) renderPane(title, content, stats string, focused bool) string {
-	paneWidth := (v.width - 4) / 2
-	paneHeight := v.height - 6
+	// Use actual dimensions from the view
+	width := v.width
+	height := v.height
+	if width == 0 {
+		width = 120
+	}
+	if height == 0 {
+		height = 30
+	}
+	
+	paneWidth := (width - 4) / 2
+	paneHeight := height - 6
 
 	borderColor := "240"
 	if focused {
@@ -478,7 +549,7 @@ func (v UnifiedView) renderFileList() string {
 
 // renderSyncStatus renders the sync status content
 func (v UnifiedView) renderSyncStatus() string {
-	if len(v.syncOps) == 0 {
+	if len(v.syncOps) == 0 && !v.syncing {
 		emptyStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241")).
 			Italic(true).
@@ -487,15 +558,51 @@ func (v UnifiedView) renderSyncStatus() string {
 	}
 
 	var content []string
+	
+	// Show overall sync progress at the top
+	if v.syncing && v.syncProgress != "" {
+		progressStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("39"))
+		content = append(content, progressStyle.Render(v.syncProgress))
+		content = append(content, "")
+	}
+
+	// Show individual operations
 	for _, op := range v.syncOps {
-		// Operation header
-		header := fmt.Sprintf("⏳ Syncing %s...", op.FileName)
+		// Determine icon based on status
+		var icon string
+		statusColor := "214" // orange/yellow
+		if strings.Contains(op.Status, "Completed") || strings.Contains(op.Status, "✓") {
+			icon = "✅"
+			statusColor = "42" // green
+		} else if strings.Contains(op.Status, "Failed") || strings.Contains(op.Status, "Error") {
+			icon = "❌"
+			statusColor = "196" // red
+		} else if strings.Contains(op.Status, "Pulling") {
+			icon = "⬇️ "
+		} else if strings.Contains(op.Status, "Pushing") {
+			icon = "⬆️ "
+		} else {
+			icon = "⏳"
+		}
+
+		// Operation header with status color
+		headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor))
+		header := headerStyle.Render(fmt.Sprintf("%s %s", icon, op.FileName))
 		content = append(content, header)
 
-		// Status tree
-		content = append(content, "├─ "+op.Status)
-		content = append(content, "├─ Uploading to Notion")
-		content = append(content, fmt.Sprintf("└─ %.1fs elapsed", op.ElapsedTime.Seconds()))
+		// Status details in a tree structure
+		detailStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+		if op.Status != "" && !strings.Contains(op.Status, op.FileName) {
+			content = append(content, detailStyle.Render("├─ "+op.Status))
+		}
+		if op.ElapsedTime > 0 {
+			content = append(content, detailStyle.Render(fmt.Sprintf("└─ %.1fs", op.ElapsedTime.Seconds())))
+		} else {
+			content = append(content, detailStyle.Render("└─ Processing..."))
+		}
+		content = append(content, "") // Add spacing between operations
 	}
 
 	return lipgloss.NewStyle().Padding(1).Render(strings.Join(content, "\n"))
@@ -581,6 +688,46 @@ func (v *UnifiedView) updateSyncOperation(command, status string, duration time.
 			}
 			break
 		}
+	}
+}
+
+// addOrUpdateSyncOperation adds a new operation or updates existing one
+func (v *UnifiedView) addOrUpdateSyncOperation(fileName, status string) {
+	// Check if operation already exists
+	for i := range v.syncOps {
+		if v.syncOps[i].FileName == fileName {
+			// Update status
+			v.syncOps[i].Status = status
+			// Calculate elapsed time properly
+			if v.syncOps[i].StartTime.IsZero() {
+				v.syncOps[i].StartTime = time.Now()
+			}
+			v.syncOps[i].ElapsedTime = time.Since(v.syncOps[i].StartTime)
+			// Update progress based on status
+			if status == "Completed" {
+				v.syncOps[i].Progress = 1.0
+			} else if strings.Contains(status, "Pulling") {
+				v.syncOps[i].Progress = 0.3
+			} else {
+				v.syncOps[i].Progress = 0.6
+			}
+			return
+		}
+	}
+	
+	// Add new operation
+	op := SyncOperation{
+		FileName:    fileName,
+		Status:      status,
+		StartTime:   time.Now(),
+		ElapsedTime: 0,
+		Progress:    0.3,
+	}
+	v.syncOps = append(v.syncOps, op)
+	
+	// Keep only the last 10 operations for better visibility
+	if len(v.syncOps) > 10 {
+		v.syncOps = v.syncOps[len(v.syncOps)-10:]
 	}
 }
 
