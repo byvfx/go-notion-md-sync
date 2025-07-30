@@ -25,8 +25,9 @@ var ValidSyncDirections = []string{"push", "pull", "bidirectional"}
 // NotionPageIDRegex matches valid Notion page IDs (32 hex chars or UUID format)
 var NotionPageIDRegex = regexp.MustCompile(`^[a-fA-F0-9]{32}$|^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$`)
 
-// NotionTokenRegex matches valid Notion integration tokens
-var NotionTokenRegex = regexp.MustCompile(`^secret_[a-zA-Z0-9]{30,}$`)
+// NotionTokenRegex matches valid Notion integration tokens (deprecated - not used anymore)
+// We now accept any token format and let Notion validate it
+var NotionTokenRegex = regexp.MustCompile(`^.{10,}$`)
 
 // ValidateRequired validates that a string input is not empty
 func ValidateRequired(input, fieldName string) error {
@@ -120,8 +121,10 @@ func ValidateNotionToken(token string) error {
 		return err
 	}
 
-	if !NotionTokenRegex.MatchString(token) {
-		return fmt.Errorf("invalid Notion token format (should start with 'secret_'): %w", ErrInvalidToken)
+	// Accept any non-empty token - Notion will validate it when we try to use it
+	// This is more user-friendly and accommodates different token formats
+	if len(strings.TrimSpace(token)) < 10 {
+		return fmt.Errorf("token seems too short: %w", ErrInvalidToken)
 	}
 
 	return nil

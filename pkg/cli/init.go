@@ -72,7 +72,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 		if err := util.ValidateNotionToken(token); err != nil {
 			fmt.Printf("❌ Invalid token: %v\n", err)
-			fmt.Println("   💡 Token should start with 'secret_' and be ~50 characters")
+			fmt.Println("   💡 Make sure you copied the full token from Notion")
 			continue
 		}
 		fmt.Println("✅ Valid token!")
