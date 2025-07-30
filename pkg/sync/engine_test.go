@@ -79,6 +79,24 @@ func (m *mockNotionClient) GetAllDescendantPages(ctx context.Context, parentID s
 	return []notion.Page{}, nil
 }
 
+func (m *mockNotionClient) StreamDescendantPages(ctx context.Context, parentID string) *notion.PageStream {
+	stream := notion.NewPageStream()
+	go func() {
+		defer stream.Close()
+		// Mock implementation - return empty stream
+	}()
+	return stream
+}
+
+func (m *mockNotionClient) StreamDatabaseRows(ctx context.Context, databaseID string) *notion.DatabaseRowStream {
+	stream := notion.NewDatabaseRowStream()
+	go func() {
+		defer stream.Close()
+		// Mock implementation - return empty stream
+	}()
+	return stream
+}
+
 // Database methods for mock client
 func (m *mockNotionClient) GetDatabase(ctx context.Context, databaseID string) (*notion.Database, error) {
 	return &notion.Database{ID: databaseID}, nil

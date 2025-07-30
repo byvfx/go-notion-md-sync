@@ -7,6 +7,7 @@ import (
 
 	"github.com/byvfx/go-notion-md-sync/pkg/config"
 	"github.com/byvfx/go-notion-md-sync/pkg/sync"
+	"github.com/byvfx/go-notion-md-sync/pkg/util"
 	"github.com/spf13/cobra"
 )
 
@@ -39,9 +40,9 @@ func runSync(cmd *cobra.Command, args []string) error {
 		syncDirection = args[0]
 	}
 
-	// Validate direction
-	if syncDirection != "push" && syncDirection != "pull" && syncDirection != "bidirectional" {
-		return fmt.Errorf("invalid direction: %s (must be push, pull, or bidirectional)", syncDirection)
+	// Validate sync direction
+	if err := util.ValidateSyncDirection(syncDirection); err != nil {
+		return fmt.Errorf("invalid sync direction: %w", err)
 	}
 
 	// Load configuration
@@ -50,8 +51,8 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	printVerbose("Loaded configuration from: %s", configPath)
-	printVerbose("Sync direction: %s", syncDirection)
+	util.Debug("Loaded configuration from: %s", configPath)
+	util.Info("Sync direction: %s", syncDirection)
 
 	// Create sync engine
 	engine := sync.NewEngine(cfg)
@@ -64,18 +65,30 @@ func runSync(cmd *cobra.Command, args []string) error {
 		workingDir = cfg.Directories.MarkdownRoot
 	}
 
+	// Validate working directory
+	if err := util.ValidateDirectoryPath(workingDir, true); err != nil {
+		return fmt.Errorf("invalid working directory: %w", err)
+	}
+
+	// Validate specific file if provided
+	if syncFile != "" {
+		if err := util.ValidateFilePath(syncFile, true); err != nil {
+			return fmt.Errorf("invalid sync file: %w", err)
+		}
+	}
+
 	if dryRun {
-		fmt.Println("DRY RUN: No actual changes will be made")
+		util.Progress("DRY RUN: No actual changes will be made")
 		return performDryRun(ctx, workingDir, syncFile, syncDirection)
 	}
 
 	// Sync specific file or all files
 	if syncFile != "" {
-		printVerbose("Syncing file: %s", syncFile)
+		util.Info("Syncing file: %s", syncFile)
 		return syncSingleFile(ctx, engine, syncFile, syncDirection)
 	}
 
-	printVerbose("Syncing all files in directory: %s", workingDir)
+	util.Info("Syncing all files in directory: %s", workingDir)
 	if err := performDirectorySync(ctx, engine, workingDir, syncDirection); err != nil {
 		return fmt.Errorf("sync failed: %w", err)
 	}

@@ -460,6 +460,14 @@ func (c *benchmarkNotionClient) UpdateDatabaseRow(ctx context.Context, pageID st
 	return nil, nil
 }
 
+func (c *benchmarkNotionClient) StreamDescendantPages(ctx context.Context, parentID string) *notion.PageStream {
+	return notion.NewPageStream()
+}
+
+func (c *benchmarkNotionClient) StreamDatabaseRows(ctx context.Context, databaseID string) *notion.DatabaseRowStream {
+	return notion.NewDatabaseRowStream()
+}
+
 type benchmarkConverter struct{}
 
 func (c *benchmarkConverter) MarkdownToBlocks(content string) ([]map[string]interface{}, error) {

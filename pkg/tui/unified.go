@@ -313,7 +313,7 @@ func (v UnifiedView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		v.errorMessage = ""
 		v.lastError = nil
 		return v, nil
-		
+
 	case ProgressTickMsg:
 		if v.executor != nil && v.executor.isRunning {
 			// Create progress message from executor state
@@ -322,9 +322,9 @@ func (v UnifiedView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if v.executor.lastProgressMsg != "" {
 				progressMsg = v.executor.lastProgressMsg
 			}
-			
+
 			v.syncProgress = progressMsg
-			
+
 			// Continue ticking while operation is running
 			return v, tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
 				return ProgressTickMsg{}
@@ -361,12 +361,12 @@ func (v UnifiedView) View() string {
 	width := v.width
 	height := v.height
 	if width == 0 {
-		width = 120  // Default terminal width
+		width = 120 // Default terminal width
 	}
 	if height == 0 {
-		height = 30  // Default terminal height
+		height = 30 // Default terminal height
 	}
-	
+
 	// Update dimensions if they were using defaults
 	if v.width == 0 || v.height == 0 {
 		v.width = width
@@ -481,7 +481,7 @@ func (v *UnifiedView) updatePaneSizes() {
 	if height == 0 {
 		height = 30
 	}
-	
+
 	// Account for borders and padding
 	contentWidth := width - 4
 	contentHeight := height - 6 // Header, footer, borders
@@ -504,7 +504,7 @@ func (v UnifiedView) renderPane(title, content, stats string, focused bool) stri
 	if height == 0 {
 		height = 30
 	}
-	
+
 	paneWidth := (width - 4) / 2
 	paneHeight := height - 6
 
@@ -558,7 +558,7 @@ func (v UnifiedView) renderSyncStatus() string {
 	}
 
 	var content []string
-	
+
 	// Show overall sync progress at the top
 	if v.syncing && v.syncProgress != "" {
 		progressStyle := lipgloss.NewStyle().
@@ -714,7 +714,7 @@ func (v *UnifiedView) addOrUpdateSyncOperation(fileName, status string) {
 			return
 		}
 	}
-	
+
 	// Add new operation
 	op := SyncOperation{
 		FileName:    fileName,
@@ -724,7 +724,7 @@ func (v *UnifiedView) addOrUpdateSyncOperation(fileName, status string) {
 		Progress:    0.3,
 	}
 	v.syncOps = append(v.syncOps, op)
-	
+
 	// Keep only the last 10 operations for better visibility
 	if len(v.syncOps) > 10 {
 		v.syncOps = v.syncOps[len(v.syncOps)-10:]

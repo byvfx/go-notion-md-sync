@@ -498,6 +498,14 @@ func (m *mockNotionClient) GetDatabase(ctx context.Context, databaseID string) (
 	return &notion.Database{ID: databaseID}, nil
 }
 
+func (m *mockNotionClient) StreamDescendantPages(ctx context.Context, parentID string) *notion.PageStream {
+	return notion.NewPageStream()
+}
+
+func (m *mockNotionClient) StreamDatabaseRows(ctx context.Context, databaseID string) *notion.DatabaseRowStream {
+	return notion.NewDatabaseRowStream()
+}
+
 func (m *mockNotionClient) CreatePage(ctx context.Context, parentID string, properties map[string]interface{}) (*notion.Page, error) {
 	return nil, nil
 }

@@ -19,7 +19,7 @@ func TestSyncCommand_ArgumentParsing(t *testing.T) {
 			name:        "invalid direction",
 			args:        []string{"invalid", "--config", "test.yaml"},
 			wantErr:     true,
-			errContains: "invalid direction: invalid",
+			errContains: "invalid sync direction",
 		},
 		{
 			name:        "valid push direction",

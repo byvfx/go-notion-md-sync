@@ -1,11 +1,9 @@
 package tui
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/byvfx/go-notion-md-sync/pkg/config"
@@ -31,12 +29,12 @@ type CommandExecutor struct {
 	syncEngine sync.Engine
 	ctx        context.Context
 	cancelFunc context.CancelFunc
-	
+
 	// Progress tracking
-	currentOperation string
+	currentOperation   string
 	operationStartTime time.Time
-	lastProgressMsg string
-	isRunning bool
+	lastProgressMsg    string
+	isRunning          bool
 }
 
 // NewCommandExecutor creates a new command executor
@@ -100,7 +98,7 @@ func (ce *CommandExecutor) executePull(_ []string) tea.Cmd {
 			ce.currentOperation = string(CommandPull)
 			ce.operationStartTime = time.Now()
 			ce.isRunning = true
-			
+
 			// Start the sync operation in background
 			go func() {
 				defer func() { ce.isRunning = false }()
@@ -111,7 +109,7 @@ func (ce *CommandExecutor) executePull(_ []string) tea.Cmd {
 					ce.lastProgressMsg = "Pull completed successfully"
 				}
 			}()
-			
+
 			return CommandStartMsg{
 				Command:   string(CommandPull),
 				StartTime: ce.operationStartTime,
@@ -251,154 +249,6 @@ Happy syncing! 🚀
 	}
 }
 
-// executeWithCapturedOutput runs sync operations while capturing stdout/stderr
-func (ce *CommandExecutor) executeWithCapturedOutput(direction string, progressChan chan<- tea.Msg, commandType CommandType) error {
-	// Add timeout context to prevent hanging - increased to 10 minutes for large syncs
-	// This accounts for slow Notion API responses (some pages take 40+ seconds)
-	timeout := 10 * time.Minute
-	ctx, cancel := context.WithTimeout(ce.ctx, timeout)
-	defer cancel()
-
-	// Send initial message about timeout
-	progressChan <- CommandProgressMsg{
-		Command: string(commandType),
-		Message: fmt.Sprintf("Starting %s (timeout: %v)...", direction, timeout),
-	}
-
-	// Create pipes to capture stdout and stderr
-	oldStdout := os.Stdout
-	oldStderr := os.Stderr
-
-	r, w, err := os.Pipe()
-	if err != nil {
-		return err
-	}
-
-	os.Stdout = w
-	os.Stderr = w
-
-	// Channel to signal when pipe reading is done
-	done := make(chan bool)
-
-	// Create a goroutine to read from the pipe and send progress messages
-	go func() {
-		defer func() {
-			_ = r.Close()
-			done <- true
-		}()
-
-		scanner := bufio.NewScanner(r)
-		for scanner.Scan() {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				line := strings.TrimSpace(scanner.Text())
-				if line != "" {
-					// Filter out debug/warning messages and clean up the output
-					if !strings.Contains(line, "Debug:") && !strings.HasPrefix(line, "Warning:") && !strings.Contains(line, "Page title:") {
-						// Extract meaningful progress information
-						var message string
-						var currentFile string
-						
-						if strings.Contains(line, "Found") && strings.Contains(line, "pages") {
-							message = line
-						} else if strings.Contains(line, "Pulling page:") {
-							// Extract page name from "[1/14] Pulling page: PageName"
-							parts := strings.SplitN(line, "Pulling page: ", 2)
-							if len(parts) == 2 {
-								currentFile = strings.TrimSpace(parts[1])
-								message = fmt.Sprintf("Pulling: %s", currentFile)
-							} else {
-								message = line
-							}
-						} else if strings.Contains(line, "✓ Successfully pulled") {
-							// Extract page name from success message
-							parts := strings.SplitN(line, "✓ Successfully pulled ", 2)
-							if len(parts) == 2 {
-								pageName := strings.TrimSpace(parts[1])
-								currentFile = pageName  // Set currentFile for completed items
-								message = fmt.Sprintf("✓ Completed: %s", pageName)
-							} else {
-								message = "✓ Page synced successfully"
-							}
-						} else if strings.Contains(line, "Saving to:") {
-							// Skip these - they're just details
-							continue
-						} else if strings.Contains(line, "Notion ID:") {
-							// Skip these - they're just details
-							continue
-						} else if strings.Contains(line, "Using concurrent processing") {
-							message = line
-						} else if strings.Contains(line, "Concurrent sync complete") {
-							message = line
-						} else if strings.Contains(line, "Pulling all pages") {
-							message = line
-						} else {
-							// Skip other messages to reduce noise
-							continue
-						}
-
-						progressChan <- CommandProgressMsg{
-							Command:     string(commandType),
-							Message:     message,
-							CurrentFile: currentFile,
-						}
-					}
-				}
-			}
-		}
-	}()
-
-	// Execute the actual sync operation with timeout
-	var syncErr error
-	syncDone := make(chan bool)
-
-	go func() {
-		syncErr = ce.syncEngine.SyncAll(ctx, direction)
-		syncDone <- true
-	}()
-
-	// Wait for either sync completion or timeout
-	select {
-	case <-syncDone:
-		// Sync completed
-	case <-ctx.Done():
-		syncErr = fmt.Errorf("sync operation timed out after %v", timeout)
-	}
-
-	// Restore stdout and stderr
-	_ = w.Close()
-	os.Stdout = oldStdout
-	os.Stderr = oldStderr
-
-	// Wait for pipe reader to finish
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		// Don't wait forever for pipe to close
-	}
-
-	return syncErr
-}
-
-// readProgressChannel creates a tea.Cmd that reads from a progress channel
-func readProgressChannel(ch <-chan tea.Msg) tea.Cmd {
-	return func() tea.Msg {
-		// Read the next message from the channel
-		select {
-		case msg, ok := <-ch:
-			if !ok {
-				// Channel closed, no more messages
-				return nil
-			}
-			return msg
-		default:
-			// No message available yet
-			return nil
-		}
-	}
-}
 
 // Command Messages
 

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/byvfx/go-notion-md-sync/pkg/util"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -243,41 +244,54 @@ func (m FileListModel) loadFiles(path string) tea.Cmd {
 		// TODO: Implement actual file loading from filesystem
 		// For now, return mock data
 
-		files := []FileItem{
-			{
-				Path:        filepath.Join(path, ".."),
+		files := []FileItem{}
+
+		// Only add parent directory navigation if we're not at the root
+		// Use secure path joining to prevent traversal attacks
+		if path != "/" && path != "" {
+			parentPath := filepath.Dir(path)
+			files = append(files, FileItem{
+				Path:        parentPath,
 				Name:        "..",
 				IsDirectory: true,
 				Desc:        "Parent directory",
-			},
+			})
 		}
 
 		// Add mock files based on path
 		if strings.Contains(path, "docs") {
+			// Use sanitized filenames for mock data
+			guidePath, _ := util.SecureJoin(path, "guide.md")
+			apiPath, _ := util.SecureJoin(path, "api.md")
+
 			files = append(files, []FileItem{
 				{
-					Path:   filepath.Join(path, "guide.md"),
+					Path:   guidePath,
 					Name:   "guide.md",
 					Status: StatusModified,
 					Desc:   "Modified locally",
 				},
 				{
-					Path:   filepath.Join(path, "api.md"),
+					Path:   apiPath,
 					Name:   "api.md",
 					Status: StatusError,
 					Desc:   "Sync error",
 				},
 			}...)
 		} else {
+			// Use secure path joining for all mock paths
+			docsPath, _ := util.SecureJoin(path, "docs")
+			readmePath, _ := util.SecureJoin(path, "README.md")
+
 			files = append(files, []FileItem{
 				{
-					Path:        filepath.Join(path, "docs"),
+					Path:        docsPath,
 					Name:        "docs",
 					IsDirectory: true,
 					Desc:        "Documentation",
 				},
 				{
-					Path:   filepath.Join(path, "README.md"),
+					Path:   readmePath,
 					Name:   "README.md",
 					Status: StatusSynced,
 					Desc:   "Last synced: 2 hours ago",

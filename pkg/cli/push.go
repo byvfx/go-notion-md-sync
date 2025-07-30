@@ -10,6 +10,7 @@ import (
 	"github.com/byvfx/go-notion-md-sync/pkg/config"
 	"github.com/byvfx/go-notion-md-sync/pkg/staging"
 	"github.com/byvfx/go-notion-md-sync/pkg/sync"
+	"github.com/byvfx/go-notion-md-sync/pkg/util"
 	"github.com/spf13/cobra"
 )
 
@@ -40,9 +41,21 @@ func init() {
 }
 
 func runPush(cmd *cobra.Command, args []string) error {
+	// Validate file argument if provided
+	if len(args) > 0 {
+		if err := util.ValidateFilePath(args[0], true); err != nil {
+			return fmt.Errorf("invalid file path: %w", err)
+		}
+	}
+
 	workingDir, err := getWorkingDirectory()
 	if err != nil {
 		return err
+	}
+
+	// Validate working directory
+	if err := util.ValidateDirectoryPath(workingDir, true); err != nil {
+		return fmt.Errorf("invalid working directory: %w", err)
 	}
 
 	cfg, err := config.Load(configPath)

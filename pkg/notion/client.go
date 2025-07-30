@@ -27,6 +27,10 @@ type Client interface {
 	GetChildPages(ctx context.Context, parentID string) ([]Page, error)
 	GetAllDescendantPages(ctx context.Context, parentID string) ([]Page, error)
 
+	// Streaming methods for large operations
+	StreamDescendantPages(ctx context.Context, parentID string) *PageStream
+	StreamDatabaseRows(ctx context.Context, databaseID string) *DatabaseRowStream
+
 	// Database methods
 	GetDatabase(ctx context.Context, databaseID string) (*Database, error)
 	QueryDatabase(ctx context.Context, databaseID string, request *DatabaseQueryRequest) (*DatabaseQueryResponse, error)
@@ -236,7 +240,11 @@ func (c *client) UpdatePageBlocks(ctx context.Context, pageID string, blocks []m
 			}
 			return fmt.Errorf("failed to update blocks for page %s (chunk %d-%d): %w", pageID, i+1, end, err)
 		}
-		_ = resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				fmt.Printf("Warning: failed to close response body: %v\n", err)
+			}
+		}()
 
 		// Small delay between chunks to avoid rate limiting
 		if end < len(blocks) {
@@ -283,7 +291,11 @@ func (c *client) DeletePage(ctx context.Context, pageID string) error {
 		}
 		return fmt.Errorf("failed to delete page %s: %w", pageID, err)
 	}
-	_ = resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
 
 	return nil
 }

@@ -353,6 +353,14 @@ func (c *CachedNotionClient) GetAllDescendantPages(ctx context.Context, parentID
 	return c.client.GetAllDescendantPages(ctx, parentID)
 }
 
+func (c *CachedNotionClient) StreamDescendantPages(ctx context.Context, parentID string) *notion.PageStream {
+	return c.client.StreamDescendantPages(ctx, parentID)
+}
+
+func (c *CachedNotionClient) StreamDatabaseRows(ctx context.Context, databaseID string) *notion.DatabaseRowStream {
+	return c.client.StreamDatabaseRows(ctx, databaseID)
+}
+
 func (c *CachedNotionClient) QueryDatabase(ctx context.Context, databaseID string, request *notion.DatabaseQueryRequest) (*notion.DatabaseQueryResponse, error) {
 	return c.client.QueryDatabase(ctx, databaseID, request)
 }

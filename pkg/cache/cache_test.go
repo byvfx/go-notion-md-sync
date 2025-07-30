@@ -86,6 +86,22 @@ func (m *mockNotionClient) GetAllDescendantPages(ctx context.Context, parentID s
 	return nil, errors.New("not implemented")
 }
 
+func (m *mockNotionClient) StreamDescendantPages(ctx context.Context, parentID string) *notion.PageStream {
+	stream := notion.NewPageStream()
+	go func() {
+		defer stream.Close()
+	}()
+	return stream
+}
+
+func (m *mockNotionClient) StreamDatabaseRows(ctx context.Context, databaseID string) *notion.DatabaseRowStream {
+	stream := notion.NewDatabaseRowStream()
+	go func() {
+		defer stream.Close()
+	}()
+	return stream
+}
+
 func (m *mockNotionClient) QueryDatabase(ctx context.Context, databaseID string, request *notion.DatabaseQueryRequest) (*notion.DatabaseQueryResponse, error) {
 	return nil, errors.New("not implemented")
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/byvfx/go-notion-md-sync/pkg/config"
 	"github.com/byvfx/go-notion-md-sync/pkg/markdown"
 	"github.com/byvfx/go-notion-md-sync/pkg/notion"
+	"github.com/byvfx/go-notion-md-sync/pkg/util"
 )
 
 type Engine interface {
@@ -26,15 +27,51 @@ type engine struct {
 	parser           markdown.Parser
 	converter        Converter
 	conflictResolver *ConflictResolver
+	workerCount      int // Configurable worker count
 }
 
 func NewEngine(cfg *config.Config) Engine {
+	// Create the appropriate client based on configuration
+	var client notion.Client
+	if cfg.Performance.UseMultiClient {
+		// Use multi-client approach for maximum throughput
+		client = notion.NewBatchClient(cfg.Notion.Token, cfg.Performance.ClientCount)
+	} else {
+		// Use standard client (proven best performance)
+		client = notion.NewClient(cfg.Notion.Token)
+	}
+
+	return &engine{
+		config:           cfg,
+		notion:           client,
+		parser:           markdown.NewParser(),
+		converter:        NewConverter(),
+		conflictResolver: NewConflictResolver(cfg.Sync.ConflictResolution),
+		workerCount:      cfg.Performance.Workers, // Use configured worker count
+	}
+}
+
+// NewEngineWithWorkers creates an engine with a specific worker count
+func NewEngineWithWorkers(cfg *config.Config, workers int) Engine {
 	return &engine{
 		config:           cfg,
 		notion:           notion.NewClient(cfg.Notion.Token),
 		parser:           markdown.NewParser(),
 		converter:        NewConverter(),
 		conflictResolver: NewConflictResolver(cfg.Sync.ConflictResolution),
+		workerCount:      workers,
+	}
+}
+
+// NewEngineWithClient creates an engine with a custom client
+func NewEngineWithClient(cfg *config.Config, client notion.Client) Engine {
+	return &engine{
+		config:           cfg,
+		notion:           client,
+		parser:           markdown.NewParser(),
+		converter:        NewConverter(),
+		conflictResolver: NewConflictResolver(cfg.Sync.ConflictResolution),
+		workerCount:      0,
 	}
 }
 
@@ -116,7 +153,7 @@ func (e *engine) SyncNotionToFile(ctx context.Context, pageID, filePath string) 
 	databaseRefs, err := e.exportChildDatabases(ctx, pageID, filePath, title)
 	if err != nil {
 		// Log warning but don't fail the page sync
-		fmt.Printf("  Warning: Failed to export databases: %v\n", err)
+		util.WithError(err, "Failed to export databases for page %s", pageID)
 	}
 
 	// Convert blocks to markdown
@@ -180,6 +217,12 @@ func (e *engine) syncAllMarkdownToNotion(ctx context.Context) error {
 }
 
 func (e *engine) syncAllNotionToMarkdown(ctx context.Context) error {
+	// Check if we should use streaming for large workspaces
+	if e.shouldUseStreaming(ctx) {
+		return e.syncAllNotionToMarkdownStreaming(ctx)
+	}
+
+	// Use original implementation for smaller workspaces
 	// Get the parent page itself first
 	parentPage, err := e.notion.GetPage(ctx, e.config.Notion.ParentPageID)
 	if err != nil {
@@ -212,12 +255,22 @@ func (e *engine) syncAllNotionToMarkdown(ctx context.Context) error {
 
 // syncPagesConcurrently processes multiple pages concurrently using simple goroutines
 func (e *engine) syncPagesConcurrently(ctx context.Context, pages []notion.Page, pageParentMap map[string]string) error {
-	// Configure concurrency based on page count
-	workerCount := 5 // Default to 5 workers
-	if len(pages) < 5 {
-		workerCount = len(pages) // Use fewer workers for small batches
-	} else if len(pages) > 20 {
-		workerCount = 10 // Use more workers for large batches
+	// Configure concurrency based on page count or custom setting
+	workerCount := e.workerCount
+	if workerCount == 0 {
+		// Auto-detect based on page count - optimized based on performance testing
+		workerCount = 30 // Optimal performance found with 30 workers
+		if len(pages) < 5 {
+			workerCount = len(pages) // Use fewer workers for very small batches
+		} else if len(pages) < 15 {
+			workerCount = 20 // Good performance for medium batches
+		}
+		// For 15+ pages, use 30 workers (proven optimal)
+	}
+
+	// Cap at 50 workers to avoid overwhelming the API
+	if workerCount > 50 {
+		workerCount = 50
 	}
 
 	fmt.Printf("🚀 Using concurrent processing with %d workers for %d pages\n", workerCount, len(pages))
@@ -261,9 +314,9 @@ func (e *engine) syncPagesConcurrently(ctx context.Context, pages []notion.Page,
 	fmt.Printf("\n🎉 Concurrent sync complete! %d/%d pages successful\n", successCount, len(pages))
 
 	if len(errors) > 0 {
-		fmt.Printf("❌ %d pages failed:\n", len(errors))
+		util.ErrorMsg("%d pages failed", len(errors))
 		for _, errMsg := range errors {
-			fmt.Printf("  - %s\n", errMsg)
+			util.Error("  - %s", errMsg)
 		}
 		return fmt.Errorf("%d pages failed to sync", len(errors))
 	}
@@ -452,7 +505,7 @@ func (e *engine) buildFilePathForPage(page *notion.Page, title string, pageParen
 
 		// Safety check to prevent infinite loops
 		if visited[currentPageID] {
-			fmt.Printf("Warning: cycle detected in page hierarchy for page %s\n", currentPageID)
+			util.Warning("Cycle detected in page hierarchy for page %s", currentPageID)
 			break
 		}
 		visited[currentPageID] = true
@@ -462,6 +515,8 @@ func (e *engine) buildFilePathForPage(page *notion.Page, title string, pageParen
 		for _, p := range allPages {
 			if p.ID == parentID {
 				parentTitle := e.extractTitleFromPage(&p)
+				// Sanitize the parent title to prevent path traversal
+				parentTitle = util.SanitizeFileName(parentTitle)
 				// Add parent title as directory
 				pathParts = append([]string{parentTitle}, pathParts...)
 				currentPageID = parentID
@@ -472,7 +527,7 @@ func (e *engine) buildFilePathForPage(page *notion.Page, title string, pageParen
 
 		// If we couldn't find the parent page, break to avoid infinite loop
 		if !parentFound {
-			fmt.Printf("Warning: parent page %s not found in page list\n", parentID)
+			util.Warning("Parent page %s not found in page list", parentID)
 			break
 		}
 	}
@@ -481,17 +536,27 @@ func (e *engine) buildFilePathForPage(page *notion.Page, title string, pageParen
 	for _, p := range allPages {
 		if p.ID == e.config.Notion.ParentPageID {
 			parentTitle := e.extractTitleFromPage(&p)
+			// Sanitize the parent title
+			parentTitle = util.SanitizeFileName(parentTitle)
 			pathParts = append([]string{parentTitle}, pathParts...)
 			break
 		}
 	}
 
-	// Add the current page as a directory and then the filename
-	pathParts = append(pathParts, title)
-	pathParts = append(pathParts, title+".md")
+	// Sanitize the current page title
+	safeTitle := util.SanitizeFileName(title)
 
-	// Construct the full path
-	fullPath := filepath.Join(e.config.Directories.MarkdownRoot, filepath.Join(pathParts...))
+	// Add the current page as a directory and then the filename
+	pathParts = append(pathParts, safeTitle)
+	pathParts = append(pathParts, safeTitle+".md")
+
+	// Construct the full path securely
+	fullPath, err := util.SecureJoin(e.config.Directories.MarkdownRoot, pathParts...)
+	if err != nil {
+		// If path traversal is detected, fall back to a safe default
+		util.Warning("Potential path traversal detected for page %s, using safe path", page.ID)
+		fullPath = filepath.Join(e.config.Directories.MarkdownRoot, safeTitle, safeTitle+".md")
+	}
 	return fullPath
 }
 
@@ -738,4 +803,125 @@ func (e *engine) sanitizeFilename(filename string) string {
 	}
 
 	return filename
+}
+
+// shouldUseStreaming determines if we should use streaming based on workspace size
+func (e *engine) shouldUseStreaming(ctx context.Context) bool {
+	// Quick count of direct children to estimate workspace size
+	directChildren, err := e.notion.GetChildPages(ctx, e.config.Notion.ParentPageID)
+	if err != nil {
+		// If we can't count, err on the side of caution and use streaming
+		return true
+	}
+
+	// Use streaming if there are more than 100 direct children
+	// This is a heuristic - large workspaces often have many top-level pages
+	return len(directChildren) > 100
+}
+
+// syncAllNotionToMarkdownStreaming uses streaming to handle large workspaces
+func (e *engine) syncAllNotionToMarkdownStreaming(ctx context.Context) error {
+	fmt.Println("🌊 Using streaming mode for large workspace")
+
+	// Get parent page first
+	parentPage, err := e.notion.GetPage(ctx, e.config.Notion.ParentPageID)
+	if err != nil {
+		return fmt.Errorf("failed to get parent page: %w", err)
+	}
+
+	// Process parent page first
+	parentTitle := e.extractTitleFromPage(parentPage)
+	parentPath := e.buildFilePathForPageStreaming(*parentPage, parentTitle)
+
+	util.Progress("Processing parent page: %s", parentTitle)
+	if err := e.syncNotionPageToFile(ctx, *parentPage, parentPath); err != nil {
+		util.WithError(err, "Failed to sync parent page")
+	}
+
+	processedCount := 0
+	errorCount := 0
+
+	// Stream and process descendant pages
+	stream := e.notion.StreamDescendantPages(ctx, e.config.Notion.ParentPageID)
+
+	for {
+		select {
+		case page, ok := <-stream.Pages():
+			if !ok {
+				fmt.Printf("\n🎉 Streaming sync complete! %d/%d pages successful\n", processedCount-errorCount, processedCount+1) // +1 for parent
+				return nil
+			}
+
+			processedCount++
+			title := e.extractTitleFromPage(&page)
+			filePath := e.buildFilePathForPageStreaming(page, title)
+
+			util.Progress("[%d] Processing page: %s", processedCount, title)
+
+			if err := e.syncNotionPageToFile(ctx, page, filePath); err != nil {
+				errorCount++
+				util.ErrorMsg("Error: %v", err)
+			} else {
+				util.Success("Successfully synced: %s", title)
+			}
+
+			// Progress indicator for large operations
+			if processedCount%50 == 0 {
+				util.Progress("\n--- Progress: %d pages processed ---", processedCount)
+			}
+
+		case err := <-stream.Errors():
+			errorCount++
+			util.Warning("Streaming error: %v", err)
+
+		case <-ctx.Done():
+			return fmt.Errorf("sync cancelled: %w", ctx.Err())
+		}
+	}
+}
+
+// buildFilePathForPageStreaming builds file path without needing all pages in memory
+func (e *engine) buildFilePathForPageStreaming(page notion.Page, title string) string {
+	// For streaming, we use a simpler path construction
+	// This avoids needing to keep all pages in memory to build the hierarchy
+	safeTitle := util.SanitizeFileName(title)
+
+	// Create a simple path: markdown_root/page_title/page_title.md
+	fullPath, err := util.SecureJoin(e.config.Directories.MarkdownRoot, safeTitle, safeTitle+".md")
+	if err != nil {
+		// Fallback to safe path
+		util.Warning("Path construction failed for %s, using fallback", page.ID)
+		fullPath = filepath.Join(e.config.Directories.MarkdownRoot, safeTitle, safeTitle+".md")
+	}
+
+	return fullPath
+}
+
+// syncNotionPageToFile syncs a single Notion page to a markdown file
+func (e *engine) syncNotionPageToFile(ctx context.Context, page notion.Page, filePath string) error {
+	// Get page blocks
+	blocks, err := e.notion.GetPageBlocks(ctx, page.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get page blocks: %w", err)
+	}
+
+	// Convert to markdown
+	converter := NewConverter()
+	markdown, err := converter.BlocksToMarkdown(blocks)
+	if err != nil {
+		return fmt.Errorf("failed to convert blocks to markdown: %w", err)
+	}
+
+	// Ensure directory exists
+	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	// Write to file
+	if err := os.WriteFile(filePath, []byte(markdown), 0644); err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+
+	return nil
 }

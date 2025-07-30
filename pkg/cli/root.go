@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"fmt"
-	"os"
-
+	"github.com/byvfx/go-notion-md-sync/pkg/util"
 	"github.com/spf13/cobra"
 )
 
@@ -18,7 +16,7 @@ var rootCmd = &cobra.Command{
 	Long: `notion-md-sync is a CLI tool that synchronizes markdown files with Notion pages.
 It supports bidirectional synchronization, allowing you to push changes from markdown
 to Notion or pull changes from Notion to markdown files.`,
-	Version: "0.14.0",
+	Version: "0.16.0",
 }
 
 func Execute() error {
@@ -29,6 +27,15 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "config file path")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
 
+	// Set up logging based on verbose flag
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		if verbose {
+			util.SetLogLevel(util.DEBUG)
+		} else {
+			util.SetLogLevel(util.INFO)
+		}
+	}
+
 	// Add subcommands
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(pullCmd)
@@ -37,7 +44,5 @@ func init() {
 }
 
 func printVerbose(format string, args ...interface{}) {
-	if verbose {
-		fmt.Fprintf(os.Stderr, "[VERBOSE] "+format+"\n", args...)
-	}
+	util.Debug(format, args...)
 }

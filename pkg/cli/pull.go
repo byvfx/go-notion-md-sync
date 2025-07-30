@@ -7,6 +7,7 @@ import (
 
 	"github.com/byvfx/go-notion-md-sync/pkg/config"
 	"github.com/byvfx/go-notion-md-sync/pkg/sync"
+	"github.com/byvfx/go-notion-md-sync/pkg/util"
 	"github.com/spf13/cobra"
 )
 
@@ -34,6 +35,27 @@ func init() {
 }
 
 func runPull(cmd *cobra.Command, args []string) error {
+	// Validate inputs
+	if pullPageID != "" {
+		if err := util.ValidateNotionPageID(pullPageID); err != nil {
+			return fmt.Errorf("invalid page ID: %w", err)
+		}
+		if pullOutput == "" {
+			return fmt.Errorf("--output flag is required when pulling a specific page")
+		}
+		if err := util.ValidateFilePath(pullOutput, false); err != nil {
+			return fmt.Errorf("invalid output path: %w", err)
+		}
+	}
+
+	if pullPage != "" {
+		sanitized, err := util.SanitizeAndValidateFilename(pullPage)
+		if err != nil {
+			return fmt.Errorf("invalid page filename: %w", err)
+		}
+		pullPage = sanitized
+	}
+
 	// Load configuration
 	cfg, err := config.Load(configPath)
 	if err != nil {
@@ -52,6 +74,11 @@ func runPull(cmd *cobra.Command, args []string) error {
 	outputDir := pullDirectory
 	if outputDir == "" {
 		outputDir = cfg.Directories.MarkdownRoot
+	}
+
+	// Validate output directory
+	if err := util.ValidateDirectoryPath(outputDir, true); err != nil {
+		return fmt.Errorf("invalid output directory: %w", err)
 	}
 
 	if pullDryRun {

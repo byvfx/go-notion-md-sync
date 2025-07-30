@@ -20,6 +20,12 @@ type Config struct {
 		ConflictResolution string `yaml:"conflict_resolution" mapstructure:"conflict_resolution"`
 	} `yaml:"sync" mapstructure:"sync"`
 
+	Performance struct {
+		Workers        int  `yaml:"workers" mapstructure:"workers"`
+		UseMultiClient bool `yaml:"use_multi_client" mapstructure:"use_multi_client"`
+		ClientCount    int  `yaml:"client_count" mapstructure:"client_count"`
+	} `yaml:"performance" mapstructure:"performance"`
+
 	Directories struct {
 		MarkdownRoot     string   `yaml:"markdown_root" mapstructure:"markdown_root"`
 		ExcludedPatterns []string `yaml:"excluded_patterns" mapstructure:"excluded_patterns"`
@@ -41,6 +47,11 @@ func Load(configPath string) (*Config, error) {
 	v.SetDefault("sync.conflict_resolution", "diff")
 	v.SetDefault("directories.markdown_root", "./")
 	v.SetDefault("mapping.strategy", "filename")
+
+	// Performance defaults based on optimization testing
+	v.SetDefault("performance.workers", 0)              // 0 = auto-detect (30 for large workspaces)
+	v.SetDefault("performance.use_multi_client", false) // Standard client by default
+	v.SetDefault("performance.client_count", 3)         // 3 clients if multi-client is enabled
 
 	// Environment variable support
 	v.SetEnvPrefix("NOTION_MD_SYNC")

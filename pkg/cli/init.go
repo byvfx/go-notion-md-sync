@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/byvfx/go-notion-md-sync/pkg/util"
 	"github.com/spf13/cobra"
 )
 
@@ -34,21 +35,48 @@ func runInit(cmd *cobra.Command, args []string) error {
 	reader := bufio.NewReader(os.Stdin)
 
 	// Get Notion token
-	fmt.Print("Enter your Notion Integration Token: ")
-	token, _ := reader.ReadString('\n')
-	token = strings.TrimSpace(token)
+	var token string
+	for {
+		fmt.Print("Enter your Notion Integration Token: ")
+		token, _ = reader.ReadString('\n')
+		token = strings.TrimSpace(token)
+
+		if err := util.ValidateNotionToken(token); err != nil {
+			fmt.Printf("❌ Invalid token: %v\n", err)
+			continue
+		}
+		break
+	}
 
 	// Get parent page ID
-	fmt.Print("Enter your Notion Parent Page ID: ")
-	pageID, _ := reader.ReadString('\n')
-	pageID = strings.TrimSpace(pageID)
+	var pageID string
+	for {
+		fmt.Print("Enter your Notion Parent Page ID: ")
+		pageID, _ = reader.ReadString('\n')
+		pageID = strings.TrimSpace(pageID)
+
+		if err := util.ValidateNotionPageID(pageID); err != nil {
+			fmt.Printf("❌ Invalid page ID: %v\n", err)
+			continue
+		}
+		break
+	}
 
 	// Get markdown directory
-	fmt.Print("Markdown directory (default: ./docs): ")
-	markdownDir, _ := reader.ReadString('\n')
-	markdownDir = strings.TrimSpace(markdownDir)
-	if markdownDir == "" {
-		markdownDir = "./docs"
+	var markdownDir string
+	for {
+		fmt.Print("Markdown directory (default: ./docs): ")
+		markdownDir, _ = reader.ReadString('\n')
+		markdownDir = strings.TrimSpace(markdownDir)
+		if markdownDir == "" {
+			markdownDir = "./docs"
+		}
+
+		if err := util.ValidateDirectoryPath(markdownDir, false); err != nil {
+			fmt.Printf("❌ Invalid directory path: %v\n", err)
+			continue
+		}
+		break
 	}
 
 	// Create directories
