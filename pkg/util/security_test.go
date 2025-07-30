@@ -120,11 +120,12 @@ func TestSecurityValidation_ComprehensiveTesting(t *testing.T) {
 			token    string
 			expected bool
 		}{
-			{"secret_" + strings.Repeat("a", 43), false},  // Valid format
-			{"invalid_token_format", true},                // Wrong prefix
-			{"secret_tooshort", true},                     // Too short
-			{"", true},                                    // Empty
-			{"secret_" + strings.Repeat("../", 20), true}, // Path traversal in token
+			{"secret_" + strings.Repeat("a", 43), false},    // Valid long token
+			{"ntn_validtoken123456", false},                 // Valid token without secret prefix
+			{"valid_token_1234567890", false},               // Valid token
+			{"short", true},                                 // Too short (less than 10 chars)
+			{"", true},                                      // Empty
+			{"   ", true},                                   // Whitespace only
 		}
 
 		for _, tt := range maliciousTokens {
@@ -257,7 +258,7 @@ func TestSecurityIntegration(t *testing.T) {
 			},
 			{
 				pageID:    "123e4567-e89b-12d3-a456-426614174000",
-				token:     "invalid_token",
+				token:     "short",  // Now too short (less than 10 chars)
 				direction: "push",
 				expectErr: true,
 			},

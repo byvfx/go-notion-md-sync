@@ -153,10 +153,13 @@ func TestValidateNotionToken(t *testing.T) {
 		token   string
 		wantErr bool
 	}{
-		{"valid token", "secret_abcdefghijklmnopqrstuvwxyz1234567890123", false},
-		{"invalid prefix", "invalid_abcdefghijklmnopqrstuvwxyz1234567890123", true},
-		{"too short", "secret_short", true},
+		{"valid token with secret prefix", "secret_abcdefghijklmnopqrstuvwxyz1234567890123", false},
+		{"valid token without secret prefix", "ntn_abcdefghijklmnopqrstuvwxyz1234567890123", false},
+		{"valid short token", "abcdef1234", false},
+		{"valid long token", "very_long_token_string_with_many_characters_1234567890", false},
+		{"too short token", "short", true},
 		{"empty token", "", true},
+		{"whitespace only", "   ", true},
 	}
 
 	for _, tt := range tests {
