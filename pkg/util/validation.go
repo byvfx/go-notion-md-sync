@@ -25,10 +25,6 @@ var ValidSyncDirections = []string{"push", "pull", "bidirectional"}
 // NotionPageIDRegex matches valid Notion page IDs (32 hex chars or UUID format)
 var NotionPageIDRegex = regexp.MustCompile(`^[a-fA-F0-9]{32}$|^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$`)
 
-// NotionTokenRegex matches valid Notion integration tokens (deprecated - not used anymore)
-// We now accept any token format and let Notion validate it
-var NotionTokenRegex = regexp.MustCompile(`^.{10,}$`)
-
 // ValidateRequired validates that a string input is not empty
 func ValidateRequired(input, fieldName string) error {
 	if strings.TrimSpace(input) == "" {

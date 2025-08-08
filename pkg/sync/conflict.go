@@ -25,7 +25,7 @@ func NewConflictResolver(strategy string) *ConflictResolver {
 func (cr *ConflictResolver) ResolveConflict(localContent, remoteContent, filePath string) (string, error) {
 	switch cr.strategy {
 	case "newer":
-		return cr.resolveByNewer(localContent, remoteContent)
+		return cr.resolveByNewer(localContent, remoteContent, filePath)
 	case "notion_wins":
 		return remoteContent, nil
 	case "markdown_wins":
@@ -38,11 +38,14 @@ func (cr *ConflictResolver) ResolveConflict(localContent, remoteContent, filePat
 }
 
 // resolveByNewer resolves conflict by choosing the newer version
-// For now, we'll default to showing diff since we need timestamp comparison
-func (cr *ConflictResolver) resolveByNewer(localContent, remoteContent string) (string, error) {
-	// TODO: Implement timestamp comparison when available
-	// For now, fallback to diff resolution
-	return cr.resolveByDiff(localContent, remoteContent, "")
+// Since we don't have reliable timestamps for markdown files vs Notion pages,
+// we fall back to diff resolution to let the user decide
+func (cr *ConflictResolver) resolveByNewer(localContent, remoteContent, filePath string) (string, error) {
+	// Note: Implementing true timestamp comparison would require:
+	// 1. Storing Notion's last_edited_time in frontmatter during sync
+	// 2. Comparing with file modification time (which can be unreliable)
+	// For now, we use diff resolution for safety
+	return cr.resolveByDiff(localContent, remoteContent, filePath)
 }
 
 // resolveByDiff shows a diff and lets the user choose

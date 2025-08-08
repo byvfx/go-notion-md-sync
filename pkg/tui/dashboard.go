@@ -68,7 +68,7 @@ func (m DashboardModel) Init() tea.Cmd {
 func (m DashboardModel) Update(msg tea.Msg) (DashboardModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case refreshStatsMsg:
-		// TODO: Fetch real stats
+		// Update refresh timestamp - stats fetching not implemented yet
 		m.lastRefresh = time.Now()
 		// Continue refreshing
 		return m, tea.Tick(5*time.Second, func(t time.Time) tea.Msg {

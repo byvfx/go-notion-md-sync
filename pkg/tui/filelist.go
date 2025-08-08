@@ -241,8 +241,7 @@ type filesLoadedMsg struct {
 // loadFiles loads files from a directory
 func (m FileListModel) loadFiles(path string) tea.Cmd {
 	return func() tea.Msg {
-		// TODO: Implement actual file loading from filesystem
-		// For now, return mock data
+		// Load mock data - actual filesystem loading not implemented yet
 
 		files := []FileItem{}
 

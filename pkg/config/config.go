@@ -37,8 +37,10 @@ type Config struct {
 }
 
 func Load(configPath string) (*Config, error) {
-	// Load .env file if it exists
-	loadEnvFile()
+	// Load .env file if it exists (skip in tests)
+	if os.Getenv("GO_TEST") != "1" {
+		loadEnvFile()
+	}
 
 	v := viper.New()
 

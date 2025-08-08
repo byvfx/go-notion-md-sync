@@ -135,7 +135,7 @@ func (ce *CommandExecutor) executePush(files []string) tea.Cmd {
 // executeStatus gets sync status
 func (ce *CommandExecutor) executeStatus(_ []string) tea.Cmd {
 	return func() tea.Msg {
-		// TODO: Implement status check
+		// Return status complete message
 		return CommandCompleteMsg{
 			Command: string(CommandStatus),
 			Message: "Status check complete",

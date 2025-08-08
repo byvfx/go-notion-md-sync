@@ -7,6 +7,12 @@ import (
 )
 
 func TestLoad(t *testing.T) {
+	// Set test environment flag
+	_ = os.Setenv("GO_TEST", "1")
+	defer func() {
+		_ = os.Unsetenv("GO_TEST")
+	}()
+	
 	// Clear environment variables to avoid interference
 	_ = os.Unsetenv("NOTION_MD_SYNC_NOTION_TOKEN")
 	_ = os.Unsetenv("NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID")
@@ -170,6 +176,16 @@ notion:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Set test environment flag
+			_ = os.Setenv("GO_TEST", "1")
+			defer func() {
+				_ = os.Unsetenv("GO_TEST")
+			}()
+			
+			// Clear environment variables
+			_ = os.Unsetenv("NOTION_MD_SYNC_NOTION_TOKEN")
+			_ = os.Unsetenv("NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID")
+			
 			tempDir := t.TempDir()
 			configPath := filepath.Join(tempDir, "test_config.yaml")
 

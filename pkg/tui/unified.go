@@ -225,8 +225,7 @@ func (v UnifiedView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return v, nil
 
 		case "h", "?":
-			// Show help
-			// TODO: Show help modal
+			// Show help - not implemented yet
 			return v, nil
 
 		case " ":

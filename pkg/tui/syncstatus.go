@@ -59,10 +59,9 @@ func (m SyncStatusModel) Update(msg tea.Msg) (SyncStatusModel, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "c":
-			// Cancel current operations
-			// TODO: Implement cancellation
+			// Cancel current operations - not implemented yet
 		case "p":
-			// Pause/resume operations
+			// Toggle pause/resume operations
 			m.isActive = !m.isActive
 		}
 

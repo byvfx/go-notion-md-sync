@@ -174,7 +174,7 @@ NOTION_MD_SYNC_NOTION_TOKEN=%s
 NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID=%s
 `, token, pageID)
 
-	if err := os.WriteFile(".env", []byte(envContent), 0644); err != nil {
+	if err := os.WriteFile(".env", []byte(envContent), 0600); err != nil {
 		return fmt.Errorf("failed to create .env: %w", err)
 	}
 

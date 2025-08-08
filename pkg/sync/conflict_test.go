@@ -111,7 +111,7 @@ func TestResolveByNewer_FallsBackToDiff(t *testing.T) {
 
 	// This would normally require user input, but in a test environment
 	// it might fail or need mocking. For now, we'll test the structure exists.
-	_, err := resolver.resolveByNewer(localContent, remoteContent)
+	_, err := resolver.resolveByNewer(localContent, remoteContent, "test.md")
 
 	// The error is expected since we can't provide user input in tests
 	// but we want to make sure the method exists and doesn't panic
