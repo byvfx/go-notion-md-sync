@@ -372,6 +372,34 @@ func extractTextFromNode(node ast.Node, source []byte) string {
 	return buf.String()
 }
 
+func chunkTextToRichText(text string) []map[string]interface{} {
+	runes := []rune(text)
+	if len(runes) == 0 {
+		return []map[string]interface{}{
+			{
+				"type": "text",
+				"text": map[string]interface{}{
+					"content": "",
+				},
+			},
+		}
+	}
+	var richTexts []map[string]interface{}
+	for i := 0; i < len(runes); i += 2000 {
+		end := i + 2000
+		if end > len(runes) {
+			end = len(runes)
+		}
+		richTexts = append(richTexts, map[string]interface{}{
+			"type": "text",
+			"text": map[string]interface{}{
+				"content": string(runes[i:end]),
+			},
+		})
+	}
+	return richTexts
+}
+
 func createHeadingBlock(level int, text string) map[string]interface{} {
 	blockType := fmt.Sprintf("heading_%d", level)
 	if level > 3 {
@@ -381,14 +409,7 @@ func createHeadingBlock(level int, text string) map[string]interface{} {
 	return map[string]interface{}{
 		"type": blockType,
 		blockType: map[string]interface{}{
-			"rich_text": []map[string]interface{}{
-				{
-					"type": "text",
-					"text": map[string]interface{}{
-						"content": text,
-					},
-				},
-			},
+			"rich_text": chunkTextToRichText(text),
 		},
 	}
 }
@@ -397,14 +418,7 @@ func createParagraphBlock(text string) map[string]interface{} {
 	return map[string]interface{}{
 		"type": "paragraph",
 		"paragraph": map[string]interface{}{
-			"rich_text": []map[string]interface{}{
-				{
-					"type": "text",
-					"text": map[string]interface{}{
-						"content": text,
-					},
-				},
-			},
+			"rich_text": chunkTextToRichText(text),
 		},
 	}
 }
@@ -421,15 +435,8 @@ func createCodeBlock(text, language string) map[string]interface{} {
 	return map[string]interface{}{
 		"type": "code",
 		"code": map[string]interface{}{
-			"rich_text": []map[string]interface{}{
-				{
-					"type": "text",
-					"text": map[string]interface{}{
-						"content": text,
-					},
-				},
-			},
-			"language": language,
+			"rich_text": chunkTextToRichText(text),
+			"language":  language,
 		},
 	}
 }
@@ -452,14 +459,7 @@ func createCalloutBlock(text string) map[string]interface{} {
 	calloutBlock := map[string]interface{}{
 		"type": "callout",
 		"callout": map[string]interface{}{
-			"rich_text": []map[string]interface{}{
-				{
-					"type": "text",
-					"text": map[string]interface{}{
-						"content": content,
-					},
-				},
-			},
+			"rich_text": chunkTextToRichText(content),
 			"color": "gray_background",
 		},
 	}
@@ -789,20 +789,19 @@ func (c *converter) convertTableToBlocks(table *east.Table, source []byte) []map
 		}
 	}
 
-	// Create the main table block without children (children are sent as separate blocks)
+	// Create the main table block with children
 	tableBlock := map[string]interface{}{
 		"type": "table",
 		"table": map[string]interface{}{
 			"table_width":       columnCount,
 			"has_column_header": hasHeader,
 			"has_row_header":    false, // Markdown tables don't typically have row headers
+			"children":          tableRowBlocks,
 		},
 	}
 
-	// Return the table block followed by all the row blocks
-	allBlocks := []map[string]interface{}{tableBlock}
-	allBlocks = append(allBlocks, tableRowBlocks...)
-	return allBlocks
+	// Return the table block containing all the row blocks
+	return []map[string]interface{}{tableBlock}
 }
 
 func (c *converter) convertTableRow(row *east.TableRow, source []byte) map[string]interface{} {
