@@ -1,13 +1,13 @@
 #!/bin/bash
 # Unix installation script for notion-md-sync (Linux/macOS)
-# Usage: curl -sSL https://raw.githubusercontent.com/byvfx/go-notion-md-sync/main/scripts/install-unix.sh | bash
+# Usage: curl -sSL https://raw.githubusercontent.com/aquiveal/go-notion-md-sync/main/scripts/install-unix.sh | bash
 
 set -e
 
 # Configuration
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 VERSION="${VERSION:-latest}"
-REPO="byvfx/go-notion-md-sync"
+REPO="aquiveal/go-notion-md-sync"
 
 # Colors
 RED='\033[0;31m'

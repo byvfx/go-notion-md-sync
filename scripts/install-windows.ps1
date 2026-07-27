@@ -18,7 +18,7 @@ if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") {
 
 # Set download URL
 if ($Version -eq "latest") {
-    $apiUrl = "https://api.github.com/repos/byvfx/go-notion-md-sync/releases/latest"
+    $apiUrl = "https://api.github.com/repos/aquiveal/go-notion-md-sync/releases/latest"
     try {
         $release = Invoke-RestMethod -Uri $apiUrl
         $Version = $release.tag_name
@@ -28,7 +28,7 @@ if ($Version -eq "latest") {
     }
 }
 
-$downloadUrl = "https://github.com/byvfx/go-notion-md-sync/releases/download/$Version/notion-md-sync-windows-$arch.zip"
+$downloadUrl = "https://github.com/aquiveal/go-notion-md-sync/releases/download/$Version/notion-md-sync-windows-$arch.zip"
 $zipFile = "$env:TEMP\notion-md-sync-windows-$arch.zip"
 
 Write-Host "📦 Downloading notion-md-sync $Version for windows-$arch..."
@@ -85,7 +85,7 @@ if (Test-Path $binaryPath) {
     Write-Host "   • Use 'notion-md-sync --help' for all commands" -ForegroundColor Gray
     Write-Host ""
     Write-Host "🗑️  To uninstall later, run the uninstall script:" -ForegroundColor DarkGray
-    Write-Host "   iwr -useb https://raw.githubusercontent.com/byvfx/go-notion-md-sync/main/scripts/uninstall-windows.ps1 | iex" -ForegroundColor DarkGray
+    Write-Host "   iwr -useb https://raw.githubusercontent.com/aquiveal/go-notion-md-sync/main/scripts/uninstall-windows.ps1 | iex" -ForegroundColor DarkGray
 } else {
     Write-Error "Installation failed - binary not found at $binaryPath"
     exit 1
