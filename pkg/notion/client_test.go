@@ -454,6 +454,95 @@ func TestClient_UpdatePageBlocks(t *testing.T) {
 	}
 }
 
+func TestUpdatePageBlocks_NonDestructiveFailureRollback(t *testing.T) {
+	existingBlocks := []Block{
+		{ID: "old-1", Type: "paragraph"},
+		{ID: "old-2", Type: "paragraph"},
+	}
+
+	blocksToUpdate := []map[string]interface{}{
+		{
+			"type": "paragraph",
+			"paragraph": map[string]interface{}{
+				"rich_text": []map[string]interface{}{
+					{"text": map[string]interface{}{"content": "Valid block chunk 1"}},
+				},
+			},
+		},
+		{
+			"type": "paragraph",
+			"paragraph": map[string]interface{}{
+				"rich_text": []map[string]interface{}{
+					{"text": map[string]interface{}{"content": "Invalid block chunk 2"}},
+				},
+			},
+		},
+	}
+	
+	// Create a large number of blocks to trigger multiple chunks
+	// Chunk 1 will succeed, Chunk 2 will fail
+	manyBlocks := make([]map[string]interface{}, 150)
+	for i := 0; i < 150; i++ {
+		manyBlocks[i] = blocksToUpdate[0]
+	}
+
+	deletedOldBlocks := 0
+	deletedNewBlocks := 0
+	patchCount := 0
+
+	server := newMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(BlocksResponse{Results: existingBlocks})
+
+		case "PATCH":
+			patchCount++
+			if patchCount == 2 {
+				// Fail on the second chunk
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"object":  "error",
+					"status":  400,
+					"code":    "validation_error",
+					"message": "Invalid block",
+				})
+				return
+			}
+			// Succeed on the first chunk
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"object": "list",
+				"results": []map[string]interface{}{
+					{"id": "new-1"},
+					{"id": "new-2"},
+				},
+			})
+
+		case "DELETE":
+			path := r.URL.Path
+			if strings.Contains(path, "old-") {
+				deletedOldBlocks++
+			} else if strings.Contains(path, "new-") {
+				deletedNewBlocks++
+			}
+			w.WriteHeader(http.StatusOK)
+		}
+	})
+	defer server.Close()
+
+	c := &client{
+		httpClient: &http.Client{Timeout: DefaultTimeout},
+		token:      "test-token",
+		baseURL:    server.URL,
+	}
+
+	err := c.UpdatePageBlocks(context.Background(), "test-page", manyBlocks)
+	assert.Error(t, err)
+	assert.Equal(t, 0, deletedOldBlocks, "Old blocks should not be deleted on failure")
+	assert.Equal(t, 2, deletedNewBlocks, "Newly created blocks from chunk 1 should be rolled back")
+}
+
 func TestClient_DeletePage(t *testing.T) {
 	tests := []struct {
 		name         string

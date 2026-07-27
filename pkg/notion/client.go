@@ -210,16 +210,24 @@ func (c *client) CreatePage(ctx context.Context, parentID string, properties map
 }
 
 func (c *client) UpdatePageBlocks(ctx context.Context, pageID string, blocks []map[string]interface{}) error {
-	// Clear existing blocks first using sequential deletion for reliability
-	if err := c.clearPageBlocks(ctx, pageID); err != nil {
-		return fmt.Errorf("failed to clear existing blocks: %w", err)
+	if len(blocks) == 0 {
+		return c.clearPageBlocks(ctx, pageID)
 	}
 
-	// Wait a bit for Notion to process deletions
-	time.Sleep(200 * time.Millisecond)
+	// 1. Get existing block IDs before adding new ones
+	existingBlocks, err := c.GetPageBlocks(ctx, pageID)
+	if err != nil {
+		return fmt.Errorf("failed to get existing blocks: %w", err)
+	}
 
-	// Add new blocks in chunks
+	oldBlockIDs := make([]string, len(existingBlocks))
+	for i, b := range existingBlocks {
+		oldBlockIDs[i] = b.ID
+	}
+
+	// 2. Append new blocks in chunks
 	const maxBlocksPerRequest = 100
+	var newBlockIDs []string
 
 	for i := 0; i < len(blocks); i += maxBlocksPerRequest {
 		end := i + maxBlocksPerRequest
@@ -228,23 +236,37 @@ func (c *client) UpdatePageBlocks(ctx context.Context, pageID string, blocks []m
 		}
 
 		chunk := blocks[i:end]
-
 		updateReq := map[string]interface{}{
 			"children": chunk,
 		}
 
 		resp, err := c.doRequest(ctx, "PATCH", "/blocks/"+pageID+"/children", updateReq)
 		if err != nil {
+			// Rollback: delete any newly added blocks if an append failed
+			c.deleteBlocks(ctx, newBlockIDs)
 			if apiErr, ok := err.(*NotionAPIError); ok {
 				apiErr.PageID = pageID
 			}
 			return fmt.Errorf("failed to update blocks for page %s (chunk %d-%d): %w", pageID, i+1, end, err)
 		}
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				fmt.Printf("Warning: failed to close response body: %v\n", err)
+
+		// Decode response to collect new block IDs for potential rollback
+		var listResp struct {
+			Results []struct {
+				ID string `json:"id"`
+			} `json:"results"`
+		}
+		if decodeErr := json.NewDecoder(resp.Body).Decode(&listResp); decodeErr == nil {
+			for _, res := range listResp.Results {
+				if res.ID != "" {
+					newBlockIDs = append(newBlockIDs, res.ID)
+				}
 			}
-		}()
+		}
+		
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
 
 		// Small delay between chunks to avoid rate limiting
 		if end < len(blocks) {
@@ -252,30 +274,36 @@ func (c *client) UpdatePageBlocks(ctx context.Context, pageID string, blocks []m
 		}
 	}
 
+	// 3. Now that all new blocks are successfully appended, safely delete old blocks
+	c.deleteBlocks(ctx, oldBlockIDs)
+
 	return nil
 }
 
 func (c *client) clearPageBlocks(ctx context.Context, pageID string) error {
-	// Get existing blocks
 	existingBlocks, err := c.GetPageBlocks(ctx, pageID)
 	if err != nil {
 		return fmt.Errorf("failed to get existing blocks: %w", err)
 	}
+	
+	blockIDs := make([]string, len(existingBlocks))
+	for i, b := range existingBlocks {
+		blockIDs[i] = b.ID
+	}
+	
+	c.deleteBlocks(ctx, blockIDs)
+	return nil
+}
 
-	// Delete existing blocks sequentially for reliability
-	for _, block := range existingBlocks {
-		_, err := c.doRequest(ctx, "DELETE", "/blocks/"+block.ID, nil)
+func (c *client) deleteBlocks(ctx context.Context, blockIDs []string) {
+	for _, id := range blockIDs {
+		_, err := c.doRequest(ctx, "DELETE", "/blocks/"+id, nil)
 		if err != nil {
-			// Log warning but continue - some blocks might not be deletable
-			fmt.Printf("Warning: failed to delete block %s: %v\n", block.ID, err)
+			fmt.Printf("Warning: failed to delete block %s: %v\n", id, err)
 			continue
 		}
-
-		// Small delay to avoid rate limiting
 		time.Sleep(50 * time.Millisecond)
 	}
-
-	return nil
 }
 
 func (c *client) DeletePage(ctx context.Context, pageID string) error {
