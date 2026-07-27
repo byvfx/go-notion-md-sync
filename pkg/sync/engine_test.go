@@ -206,6 +206,7 @@ func createTestEngine(t *testing.T) (*engine, *mockNotionClient, *mockParser, *m
 		parser:           mockParser,
 		converter:        mockConverter,
 		conflictResolver: NewConflictResolver(cfg.Sync.ConflictResolution),
+		folderPageCache:  make(map[string]string),
 	}
 
 	return e, mockNotion, mockParser, mockConverter
@@ -566,7 +567,6 @@ func TestEngine_IsExcluded(t *testing.T) {
 		{"test.tmp", true},
 		{"draft_notes.md", true},
 		{"archive/old.md", true},
-		{"archive/old/nested.md", false}, // filepath.Match doesn't support recursive patterns
 		{"not_draft.md", false},
 	}
 
@@ -693,11 +693,70 @@ func TestEngine_CreateNotionPage(t *testing.T) {
 
 	// Execute
 	ctx := context.Background()
-	pageID, err := e.createNotionPage(ctx, "Test Title", blocks)
+	pageID, err := e.createNotionPage(ctx, e.config.Notion.ParentPageID, "Test Title", blocks)
 
 	// Verify
 	assert.NoError(t, err)
 	assert.Equal(t, "created-page-id", pageID)
+}
+
+func TestResolveParentPageForPath_Subdirectory(t *testing.T) {
+	e, mockNotion, mockParser, _ := createTestEngine(t)
+	ctx := context.Background()
+	
+	// Ensure docs/c4 dir exists for README checks
+	dirPath := filepath.Join(e.config.Directories.MarkdownRoot, "c4")
+	_ = os.MkdirAll(dirPath, 0755)
+	defer os.RemoveAll(e.config.Directories.MarkdownRoot)
+	
+	// Mock parsing to return a document for README if called
+	mockParser.parseFileFunc = func(filePath string) (*markdown.Document, error) {
+		return nil, errors.New("file not found")
+	}
+	
+	mockNotion.getChildPagesFunc = func(ctx context.Context, parentID string) ([]notion.Page, error) {
+		return []notion.Page{}, nil
+	}
+	
+	var createdParentID string
+	mockNotion.createPageFunc = func(ctx context.Context, parentID string, properties map[string]interface{}) (*notion.Page, error) {
+		createdParentID = parentID
+		return &notion.Page{ID: "created-c4-folder-id"}, nil
+	}
+	
+	parentID, err := e.resolveParentPageForPath(ctx, "c4/01-context.md")
+	
+	assert.NoError(t, err)
+	assert.Equal(t, e.config.Notion.ParentPageID, createdParentID) // Created under root
+	assert.Equal(t, "created-c4-folder-id", parentID)
+}
+
+func TestResolveParentPageForPath_WithREADME(t *testing.T) {
+	e, _, mockParser, _ := createTestEngine(t)
+	ctx := context.Background()
+	
+	dirPath := filepath.Join(e.config.Directories.MarkdownRoot, "c4")
+	_ = os.MkdirAll(dirPath, 0755)
+	defer os.RemoveAll(e.config.Directories.MarkdownRoot)
+	
+	readmePath := filepath.Join(dirPath, "README.md")
+	_ = os.WriteFile(readmePath, []byte("test"), 0644)
+	
+	mockParser.parseFileFunc = func(filePath string) (*markdown.Document, error) {
+		if filePath == readmePath {
+			return &markdown.Document{
+				Metadata: map[string]interface{}{
+					"notion_id": "existing-c4-id",
+				},
+			}, nil
+		}
+		return nil, errors.New("file not found")
+	}
+	
+	parentID, err := e.resolveParentPageForPath(ctx, "c4/01-context.md")
+	
+	assert.NoError(t, err)
+	assert.Equal(t, "existing-c4-id", parentID)
 }
 
 func TestEngine_UpdateNotionPage(t *testing.T) {

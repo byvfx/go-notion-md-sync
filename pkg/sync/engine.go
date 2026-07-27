@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	gosync "sync"
 	"time"
 
 	"github.com/byvfx/go-notion-md-sync/pkg/config"
@@ -28,6 +29,8 @@ type engine struct {
 	converter        Converter
 	conflictResolver *ConflictResolver
 	workerCount      int // Configurable worker count
+	folderPageCache  map[string]string
+	folderCacheMu    gosync.RWMutex
 }
 
 func NewEngine(cfg *config.Config) Engine {
@@ -48,6 +51,7 @@ func NewEngine(cfg *config.Config) Engine {
 		converter:        NewConverter(),
 		conflictResolver: NewConflictResolver(cfg.Sync.ConflictResolution),
 		workerCount:      cfg.Performance.Workers, // Use configured worker count
+		folderPageCache:  make(map[string]string),
 	}
 }
 
@@ -60,6 +64,7 @@ func NewEngineWithWorkers(cfg *config.Config, workers int) Engine {
 		converter:        NewConverter(),
 		conflictResolver: NewConflictResolver(cfg.Sync.ConflictResolution),
 		workerCount:      workers,
+		folderPageCache:  make(map[string]string),
 	}
 }
 
@@ -72,6 +77,7 @@ func NewEngineWithClient(cfg *config.Config, client notion.Client) Engine {
 		converter:        NewConverter(),
 		conflictResolver: NewConflictResolver(cfg.Sync.ConflictResolution),
 		workerCount:      0,
+		folderPageCache:  make(map[string]string),
 	}
 }
 
@@ -110,8 +116,18 @@ func (e *engine) SyncFileToNotion(ctx context.Context, filePath string) error {
 		// Update existing page
 		err = e.updateNotionPage(ctx, frontmatter.NotionID, title, blocks)
 	} else {
+		// Resolve parent ID based on directory structure
+		relPath, relErr := filepath.Rel(e.config.Directories.MarkdownRoot, filePath)
+		if relErr != nil {
+			relPath = filepath.Base(filePath)
+		}
+		parentID, resolveErr := e.resolveParentPageForPath(ctx, relPath)
+		if resolveErr != nil {
+			return fmt.Errorf("failed to resolve parent page: %w", resolveErr)
+		}
+
 		// Create new page
-		pageID, err := e.createNotionPage(ctx, title, blocks)
+		pageID, err := e.createNotionPage(ctx, parentID, title, blocks)
 		if err != nil {
 			return err
 		}
@@ -560,7 +576,90 @@ func (e *engine) buildFilePathForPage(page *notion.Page, title string, pageParen
 	return fullPath
 }
 
-func (e *engine) createNotionPage(ctx context.Context, title string, blocks []map[string]interface{}) (string, error) {
+func (e *engine) resolveParentPageForPath(ctx context.Context, relativeFilePath string) (string, error) {
+	dirPath := filepath.ToSlash(filepath.Dir(relativeFilePath))
+	if dirPath == "." || dirPath == "" {
+		return e.config.Notion.ParentPageID, nil
+	}
+
+	parts := strings.Split(dirPath, "/")
+	currentParentID := e.config.Notion.ParentPageID
+	currentPath := ""
+
+	for _, part := range parts {
+		if currentPath == "" {
+			currentPath = part
+		} else {
+			currentPath = currentPath + "/" + part
+		}
+
+		e.folderCacheMu.RLock()
+		cachedID, exists := e.folderPageCache[currentPath]
+		e.folderCacheMu.RUnlock()
+
+		if exists {
+			currentParentID = cachedID
+			continue
+		}
+
+		fullDirPath := filepath.Join(e.config.Directories.MarkdownRoot, filepath.FromSlash(currentPath))
+		readmePath := filepath.Join(fullDirPath, "README.md")
+		readmeLowerPath := filepath.Join(fullDirPath, "readme.md")
+
+		var resolvedID string
+
+		// Check for README.md or readme.md
+		if _, err := os.Stat(readmePath); err == nil {
+			doc, err := e.parser.ParseFile(readmePath)
+			if err == nil {
+				fm, err := markdown.ExtractFrontmatter(doc.Metadata)
+				if err == nil && fm.NotionID != "" {
+					resolvedID = fm.NotionID
+				}
+			}
+		} else if _, err := os.Stat(readmeLowerPath); err == nil {
+			doc, err := e.parser.ParseFile(readmeLowerPath)
+			if err == nil {
+				fm, err := markdown.ExtractFrontmatter(doc.Metadata)
+				if err == nil && fm.NotionID != "" {
+					resolvedID = fm.NotionID
+				}
+			}
+		}
+
+		if resolvedID == "" {
+			// Query Notion child pages under currentParentID
+			pages, err := e.notion.GetChildPages(ctx, currentParentID)
+			if err == nil {
+				for _, page := range pages {
+					if e.extractTitleFromPage(&page) == part {
+						resolvedID = page.ID
+						break
+					}
+				}
+			}
+		}
+
+		if resolvedID == "" {
+			// Create a folder parent page
+			pageID, err := e.createNotionPage(ctx, currentParentID, part, nil)
+			if err != nil {
+				return "", fmt.Errorf("failed to create directory page for %s: %w", currentPath, err)
+			}
+			resolvedID = pageID
+		}
+
+		e.folderCacheMu.Lock()
+		e.folderPageCache[currentPath] = resolvedID
+		e.folderCacheMu.Unlock()
+
+		currentParentID = resolvedID
+	}
+
+	return currentParentID, nil
+}
+
+func (e *engine) createNotionPage(ctx context.Context, parentID string, title string, blocks []map[string]interface{}) (string, error) {
 	properties := map[string]interface{}{
 		"title": map[string]interface{}{
 			"title": []notion.RichText{
@@ -573,7 +672,7 @@ func (e *engine) createNotionPage(ctx context.Context, title string, blocks []ma
 		},
 	}
 
-	page, err := e.notion.CreatePage(ctx, e.config.Notion.ParentPageID, properties)
+	page, err := e.notion.CreatePage(ctx, parentID, properties)
 	if err != nil {
 		return "", fmt.Errorf("failed to create page: %w", err)
 	}
