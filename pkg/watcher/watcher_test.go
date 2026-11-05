@@ -3,10 +3,12 @@ package watcher
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,6 +23,9 @@ type mockEngine struct {
 	mu          sync.Mutex
 	syncedFiles []string
 	syncError   error
+	// onSync, when set, runs after a successful sync (e.g. to simulate the
+	// engine writing frontmatter back into the file).
+	onSync func(filePath string)
 }
 
 func (m *mockEngine) SyncFileToNotion(ctx context.Context, filePath string) error {
@@ -32,6 +37,9 @@ func (m *mockEngine) SyncFileToNotion(ctx context.Context, filePath string) erro
 	}
 
 	m.syncedFiles = append(m.syncedFiles, filePath)
+	if m.onSync != nil {
+		m.onSync(filePath)
+	}
 	return nil
 }
 
@@ -58,12 +66,41 @@ func (m *mockEngine) reset() {
 	defer m.mu.Unlock()
 	m.syncedFiles = nil
 	m.syncError = nil
+	m.onSync = nil
 }
 
 func (m *mockEngine) setSyncError(err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.syncError = err
+}
+
+func (m *mockEngine) setOnSync(fn func(filePath string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onSync = fn
+}
+
+// countSyncs returns how many times filePath has been synced.
+func (m *mockEngine) countSyncs(filePath string) int {
+	count := 0
+	for _, f := range m.getSyncedFiles() {
+		if f == filePath {
+			count++
+		}
+	}
+	return count
+}
+
+// newFastWatcher creates a watcher with a short debounce interval.
+func newFastWatcher(t *testing.T, root string, engine *mockEngine) *Watcher {
+	t.Helper()
+	w, err := NewWatcher(createTestConfig(root), engine)
+	require.NoError(t, err)
+	w.debouncer.interval = 50 * time.Millisecond
+	w.out = io.Discard
+	t.Cleanup(func() { _ = w.Close() })
+	return w
 }
 
 func setupTestDir(t *testing.T) (string, func()) {
@@ -173,65 +210,97 @@ func TestWatcher_handleEvent(t *testing.T) {
 	tempDir, cleanup := setupTestDir(t)
 	defer cleanup()
 
-	cfg := createTestConfig(tempDir)
 	engine := &mockEngine{}
-
-	watcher, err := NewWatcher(cfg, engine)
-	require.NoError(t, err)
-	defer func() { _ = watcher.Close() }()
-
+	watcher := newFastWatcher(t, tempDir, engine)
 	ctx := context.Background()
 
 	tests := []struct {
 		name        string
-		event       fsnotify.Event
+		file        string
+		createFile  bool
+		op          fsnotify.Op
 		shouldSync  bool
 		description string
 	}{
 		{
-			name: "markdown write event",
-			event: fsnotify.Event{
-				Name: filepath.Join(tempDir, "test.md"),
-				Op:   fsnotify.Write,
-			},
+			name:        "markdown write event",
+			file:        "test.md",
+			createFile:  true,
+			op:          fsnotify.Write,
 			shouldSync:  true,
 			description: "should sync markdown files on write",
 		},
 		{
-			name: "non-markdown file",
-			event: fsnotify.Event{
-				Name: filepath.Join(tempDir, "test.txt"),
-				Op:   fsnotify.Write,
-			},
+			name:        "non-markdown file",
+			file:        "test.txt",
+			createFile:  true,
+			op:          fsnotify.Write,
 			shouldSync:  false,
 			description: "should ignore non-markdown files",
 		},
 		{
-			name: "markdown create event",
-			event: fsnotify.Event{
-				Name: filepath.Join(tempDir, "new.md"),
-				Op:   fsnotify.Create,
-			},
-			shouldSync:  false,
-			description: "should ignore create events",
+			name:        "markdown create event",
+			file:        "new.md",
+			createFile:  true,
+			op:          fsnotify.Create,
+			shouldSync:  true,
+			description: "should sync on create (also how rename-into is reported)",
 		},
 		{
-			name: "markdown remove event",
-			event: fsnotify.Event{
-				Name: filepath.Join(tempDir, "deleted.md"),
-				Op:   fsnotify.Remove,
-			},
+			name:        "markdown rename event with file present",
+			file:        "renamed.md",
+			createFile:  true,
+			op:          fsnotify.Rename,
+			shouldSync:  true,
+			description: "should sync when a file exists at the renamed path",
+		},
+		{
+			name:        "markdown rename event with file gone",
+			file:        "moved-away.md",
+			createFile:  false,
+			op:          fsnotify.Rename,
+			shouldSync:  false,
+			description: "should ignore renames away from the path",
+		},
+		{
+			name:        "markdown remove event",
+			file:        "deleted.md",
+			createFile:  false,
+			op:          fsnotify.Remove,
 			shouldSync:  false,
 			description: "should ignore remove events",
 		},
 		{
-			name: "excluded file",
-			event: fsnotify.Event{
-				Name: filepath.Join(tempDir, "temp.tmp"),
-				Op:   fsnotify.Write,
-			},
+			name:        "markdown chmod event",
+			file:        "chmod.md",
+			createFile:  true,
+			op:          fsnotify.Chmod,
+			shouldSync:  false,
+			description: "should ignore chmod events",
+		},
+		{
+			name:        "excluded file",
+			file:        "temp.tmp",
+			createFile:  true,
+			op:          fsnotify.Write,
 			shouldSync:  false,
 			description: "should ignore excluded files",
+		},
+		{
+			name:        "markdown in excluded dir",
+			file:        filepath.Join("excluded", "a.md"),
+			createFile:  true,
+			op:          fsnotify.Write,
+			shouldSync:  false,
+			description: "should ignore files under excluded/**",
+		},
+		{
+			name:        "write to missing file",
+			file:        "missing.md",
+			createFile:  false,
+			op:          fsnotify.Write,
+			shouldSync:  false,
+			description: "should not sync files that no longer exist",
 		},
 	}
 
@@ -239,17 +308,21 @@ func TestWatcher_handleEvent(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			engine.reset()
 
-			// Handle the event
-			watcher.handleEvent(ctx, tt.event)
+			path := filepath.Join(tempDir, tt.file)
+			if tt.createFile {
+				require.NoError(t, os.MkdirAll(filepath.Dir(path), 0755))
+				require.NoError(t, os.WriteFile(path, []byte("# "+tt.name), 0644))
+			}
+
+			watcher.handleEvent(ctx, fsnotify.Event{Name: path, Op: tt.op})
 
 			// Wait for debouncing to complete
-			time.Sleep(3 * time.Second)
+			time.Sleep(200 * time.Millisecond)
 
 			syncedFiles := engine.getSyncedFiles()
-
 			if tt.shouldSync {
-				assert.Len(t, syncedFiles, 1, tt.description)
-				assert.Equal(t, tt.event.Name, syncedFiles[0])
+				require.Len(t, syncedFiles, 1, tt.description)
+				assert.Equal(t, path, syncedFiles[0])
 			} else {
 				assert.Len(t, syncedFiles, 0, tt.description)
 			}
@@ -262,6 +335,7 @@ func TestWatcher_isExcluded(t *testing.T) {
 	defer cleanup()
 
 	cfg := createTestConfig(tempDir)
+	cfg.Directories.ExcludedPatterns = append(cfg.Directories.ExcludedPatterns, "node_modules/**", ".git/**")
 	engine := &mockEngine{}
 
 	watcher, err := NewWatcher(cfg, engine)
@@ -273,32 +347,20 @@ func TestWatcher_isExcluded(t *testing.T) {
 		path     string
 		excluded bool
 	}{
-		{
-			name:     "normal markdown file",
-			path:     "docs/test.md",
-			excluded: false,
-		},
-		{
-			name:     "temp file in root",
-			path:     "temp.tmp",
-			excluded: true,
-		},
-		{
-			name:     "excluded directory file",
-			path:     "excluded/test.md",
-			excluded: true, // excluded/** pattern matches this
-		},
-		{
-			name:     "nested file with tmp extension",
-			path:     "docs/test.tmp",
-			excluded: false, // *.tmp doesn't match paths with directories
-		},
+		{"normal markdown file", "docs/test.md", false},
+		{"temp file in root", "temp.tmp", true},
+		{"excluded directory file", "excluded/test.md", true},
+		{"nested file with tmp extension", "docs/test.tmp", true},
+		{"absolute nested tmp", filepath.Join(tempDir, "a", "b", "c.tmp"), true},
+		{"absolute normal file", filepath.Join(tempDir, "a", "b", "c.md"), false},
+		{"nested node_modules", filepath.Join(tempDir, "web", "node_modules", "x.md"), true},
+		{"git dir", filepath.Join(tempDir, ".git", "x.md"), true},
+		{"excluded dir itself", filepath.Join(tempDir, "excluded"), true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := watcher.isExcluded(tt.path)
-			assert.Equal(t, tt.excluded, result)
+			assert.Equal(t, tt.excluded, watcher.isExcluded(tt.path))
 		})
 	}
 }
@@ -307,62 +369,92 @@ func TestWatcher_syncFile(t *testing.T) {
 	tempDir, cleanup := setupTestDir(t)
 	defer cleanup()
 
-	cfg := createTestConfig(tempDir)
 	engine := &mockEngine{}
-
-	watcher, err := NewWatcher(cfg, engine)
-	require.NoError(t, err)
-	defer func() { _ = watcher.Close() }()
+	watcher := newFastWatcher(t, tempDir, engine)
 
 	ctx := context.Background()
 	testFile := filepath.Join(tempDir, "test.md")
+	require.NoError(t, os.WriteFile(testFile, []byte("# Test"), 0644))
 
 	t.Run("successful sync", func(t *testing.T) {
 		engine.reset()
-
-		// Capture stdout to prevent success message from appearing in test output
-		oldStdout := os.Stdout
-		r, w, _ := os.Pipe()
-		os.Stdout = w
-
 		watcher.syncFile(ctx, testFile)
-
-		// Restore stdout
-		_ = w.Close()
-		os.Stdout = oldStdout
-
-		// Read captured output (we don't need to check it)
-		buf := make([]byte, 1024)
-		_, _ = r.Read(buf)
 
 		syncedFiles := engine.getSyncedFiles()
 		assert.Len(t, syncedFiles, 1)
 		assert.Equal(t, testFile, syncedFiles[0])
 	})
 
+	t.Run("unchanged content is not synced again", func(t *testing.T) {
+		engine.reset()
+		watcher.syncFile(ctx, testFile)
+		assert.Len(t, engine.getSyncedFiles(), 0)
+	})
+
 	t.Run("sync error", func(t *testing.T) {
 		engine.reset()
 		engine.setSyncError(fmt.Errorf("sync failed"))
-
-		// Capture stdout to prevent error message from appearing in test output
-		oldStdout := os.Stdout
-		r, w, _ := os.Pipe()
-		os.Stdout = w
+		require.NoError(t, os.WriteFile(testFile, []byte("# Changed"), 0644))
 
 		// This should not panic even with an error
 		watcher.syncFile(ctx, testFile)
-
-		// Restore stdout
-		_ = w.Close()
-		os.Stdout = oldStdout
-
-		// Read captured output (we don't need to check it)
-		buf := make([]byte, 1024)
-		_, _ = r.Read(buf)
-
-		syncedFiles := engine.getSyncedFiles()
-		assert.Len(t, syncedFiles, 0)
+		assert.Len(t, engine.getSyncedFiles(), 0)
 	})
+
+	t.Run("failed sync is retried on next event", func(t *testing.T) {
+		engine.reset()
+		watcher.syncFile(ctx, testFile)
+		assert.Len(t, engine.getSyncedFiles(), 1)
+	})
+
+	t.Run("cancelled context skips sync", func(t *testing.T) {
+		engine.reset()
+		require.NoError(t, os.WriteFile(testFile, []byte("# Changed again"), 0644))
+		cancelled, cancel := context.WithCancel(ctx)
+		cancel()
+		watcher.syncFile(cancelled, testFile)
+		assert.Len(t, engine.getSyncedFiles(), 0)
+	})
+}
+
+// TestWatcher_SelfTriggeredEventSuppressed is a regression test: the engine
+// writes frontmatter (notion_id) back into a newly pushed file, which fires
+// another write event. That event must not cause a second push.
+func TestWatcher_SelfTriggeredEventSuppressed(t *testing.T) {
+	tempDir, cleanup := setupTestDir(t)
+	defer cleanup()
+
+	engine := &mockEngine{}
+	watcher := newFastWatcher(t, tempDir, engine)
+	ctx := context.Background()
+
+	testFile := filepath.Join(tempDir, "page.md")
+	require.NoError(t, os.WriteFile(testFile, []byte("# Page\n"), 0644))
+
+	engine.setOnSync(func(filePath string) {
+		// Simulate the engine writing frontmatter, then the resulting event.
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			return
+		}
+		if !strings.HasPrefix(string(content), "---") {
+			_ = os.WriteFile(filePath, append([]byte("---\nnotion_id: abc\n---\n"), content...), 0644)
+		}
+		watcher.handleEvent(ctx, fsnotify.Event{Name: filePath, Op: fsnotify.Write})
+	})
+
+	watcher.handleEvent(ctx, fsnotify.Event{Name: testFile, Op: fsnotify.Write})
+	time.Sleep(400 * time.Millisecond)
+
+	assert.Equal(t, 1, engine.countSyncs(testFile), "frontmatter write-back must not trigger a second push")
+
+	// A real user edit afterwards is still synced.
+	engine.setOnSync(nil)
+	require.NoError(t, os.WriteFile(testFile, []byte("---\nnotion_id: abc\n---\n# Page\n\nEdited\n"), 0644))
+	watcher.handleEvent(ctx, fsnotify.Event{Name: testFile, Op: fsnotify.Write})
+	time.Sleep(200 * time.Millisecond)
+
+	assert.Equal(t, 2, engine.countSyncs(testFile))
 }
 
 func TestDebouncer(t *testing.T) {
@@ -372,27 +464,27 @@ func TestDebouncer(t *testing.T) {
 	}
 
 	t.Run("single event", func(t *testing.T) {
-		executed := false
+		var executed atomic.Bool
 
 		d.debounce("test-key", func() {
-			executed = true
+			executed.Store(true)
 		})
 
 		// Should not execute immediately
-		assert.False(t, executed)
+		assert.False(t, executed.Load())
 
 		// Wait for debounce interval
 		time.Sleep(150 * time.Millisecond)
-		assert.True(t, executed)
+		assert.True(t, executed.Load())
 	})
 
 	t.Run("multiple events debounced", func(t *testing.T) {
-		execCount := 0
+		var execCount atomic.Int32
 
 		// Send multiple events rapidly
 		for i := 0; i < 5; i++ {
 			d.debounce("test-key-2", func() {
-				execCount++
+				execCount.Add(1)
 			})
 			time.Sleep(50 * time.Millisecond) // Less than debounce interval
 		}
@@ -401,21 +493,203 @@ func TestDebouncer(t *testing.T) {
 		time.Sleep(150 * time.Millisecond)
 
 		// Should only execute once
-		assert.Equal(t, 1, execCount)
+		assert.Equal(t, int32(1), execCount.Load())
 	})
 
 	t.Run("different keys execute separately", func(t *testing.T) {
-		exec1 := false
-		exec2 := false
+		var exec1, exec2 atomic.Bool
 
-		d.debounce("key1", func() { exec1 = true })
-		d.debounce("key2", func() { exec2 = true })
+		d.debounce("key1", func() { exec1.Store(true) })
+		d.debounce("key2", func() { exec2.Store(true) })
 
 		time.Sleep(150 * time.Millisecond)
 
-		assert.True(t, exec1)
-		assert.True(t, exec2)
+		assert.True(t, exec1.Load())
+		assert.True(t, exec2.Load())
 	})
+
+	t.Run("pending entries are removed after firing", func(t *testing.T) {
+		time.Sleep(150 * time.Millisecond)
+		assert.Equal(t, 0, d.pendingCount())
+	})
+}
+
+// TestDebouncer_Concurrent is a regression test for the unsynchronised
+// pending map; run with -race.
+func TestDebouncer_Concurrent(t *testing.T) {
+	d := &debouncer{
+		interval: time.Millisecond,
+		pending:  make(map[string]*time.Timer),
+	}
+
+	var calls atomic.Int32
+	var wg sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for i := 0; i < 200; i++ {
+				d.debounce(fmt.Sprintf("key-%d", (g+i)%5), func() { calls.Add(1) })
+			}
+		}(g)
+	}
+	wg.Wait()
+
+	assert.Eventually(t, func() bool { return d.pendingCount() == 0 }, 2*time.Second, 10*time.Millisecond)
+	assert.Greater(t, calls.Load(), int32(0))
+}
+
+// TestDebouncer_StaleTimerKeepsNewerEntry ensures a timer that was replaced
+// does not delete the entry of the timer that replaced it.
+func TestDebouncer_StaleTimerKeepsNewerEntry(t *testing.T) {
+	d := &debouncer{
+		interval: 60 * time.Millisecond,
+		pending:  make(map[string]*time.Timer),
+	}
+
+	var first, second atomic.Int32
+	d.debounce("k", func() { first.Add(1) })
+	time.Sleep(20 * time.Millisecond)
+	d.debounce("k", func() { second.Add(1) })
+
+	// After the first timer would have fired, the second must still be
+	// pending.
+	time.Sleep(50 * time.Millisecond)
+	assert.Equal(t, 1, d.pendingCount())
+
+	time.Sleep(100 * time.Millisecond)
+	assert.Equal(t, int32(0), first.Load())
+	assert.Equal(t, int32(1), second.Load())
+	assert.Equal(t, 0, d.pendingCount())
+}
+
+func TestDebouncer_Stop(t *testing.T) {
+	d := &debouncer{
+		interval: 50 * time.Millisecond,
+		pending:  make(map[string]*time.Timer),
+	}
+
+	var calls atomic.Int32
+	d.debounce("a", func() { calls.Add(1) })
+	d.debounce("b", func() { calls.Add(1) })
+	d.stop()
+
+	// Calls after stop are ignored.
+	d.debounce("c", func() { calls.Add(1) })
+
+	time.Sleep(120 * time.Millisecond)
+	assert.Equal(t, int32(0), calls.Load())
+	assert.Equal(t, 0, d.pendingCount())
+}
+
+// TestWatcher_CloseStopsPendingSyncs ensures a debounced sync scheduled
+// before Close never runs.
+func TestWatcher_CloseStopsPendingSyncs(t *testing.T) {
+	tempDir, cleanup := setupTestDir(t)
+	defer cleanup()
+
+	engine := &mockEngine{}
+	watcher := newFastWatcher(t, tempDir, engine)
+
+	testFile := filepath.Join(tempDir, "a.md")
+	require.NoError(t, os.WriteFile(testFile, []byte("# A"), 0644))
+
+	watcher.handleEvent(context.Background(), fsnotify.Event{Name: testFile, Op: fsnotify.Write})
+	require.NoError(t, watcher.Close())
+
+	time.Sleep(150 * time.Millisecond)
+	assert.Len(t, engine.getSyncedFiles(), 0)
+}
+
+// TestWatcher_NestedDirectories is a regression test: pull creates nested
+// directories (root/Parent/Child/Child.md), all of which must be watched,
+// including directories created after the watcher started.
+func TestWatcher_NestedDirectories(t *testing.T) {
+	tempDir, cleanup := setupTestDir(t)
+	defer cleanup()
+
+	existing := filepath.Join(tempDir, "Parent", "Child")
+	require.NoError(t, os.MkdirAll(existing, 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(tempDir, ".git", "objects"), 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(tempDir, ".notion-sync"), 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(tempDir, "excluded", "deep"), 0755))
+
+	engine := &mockEngine{}
+	watcher := newFastWatcher(t, tempDir, engine)
+
+	watched := watcher.fsWatcher.WatchList()
+	assert.Contains(t, watched, tempDir)
+	assert.Contains(t, watched, filepath.Join(tempDir, "Parent"))
+	assert.Contains(t, watched, existing)
+	for _, dir := range watched {
+		rel, err := filepath.Rel(tempDir, dir)
+		require.NoError(t, err)
+		assert.NotContains(t, rel, ".git", "hidden directories must not be watched")
+		assert.NotContains(t, rel, ".notion-sync", "hidden directories must not be watched")
+		assert.NotContains(t, rel, "excluded", "excluded directories must not be watched")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- watcher.Start(ctx) }()
+
+	// File in a pre-existing nested directory.
+	nestedFile := filepath.Join(existing, "Child.md")
+	require.NoError(t, os.WriteFile(nestedFile, []byte("# Child"), 0644))
+	assert.Eventually(t, func() bool { return engine.countSyncs(nestedFile) == 1 }, 2*time.Second, 20*time.Millisecond)
+
+	// Directory created after start, then a file inside it.
+	newDir := filepath.Join(tempDir, "New Page", "Sub")
+	require.NoError(t, os.MkdirAll(newDir, 0755))
+	assert.Eventually(t, func() bool {
+		for _, dir := range watcher.fsWatcher.WatchList() {
+			if dir == newDir {
+				return true
+			}
+		}
+		return false
+	}, 2*time.Second, 20*time.Millisecond, "new directories must be watched")
+
+	newFile := filepath.Join(newDir, "Sub.md")
+	require.NoError(t, os.WriteFile(newFile, []byte("# Sub"), 0644))
+	assert.Eventually(t, func() bool { return engine.countSyncs(newFile) == 1 }, 2*time.Second, 20*time.Millisecond)
+
+	cancel()
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(2 * time.Second):
+		t.Fatal("watcher did not stop")
+	}
+}
+
+// TestWatcher_AtomicSave is a regression test for editors that save by
+// writing a temp file and renaming it over the original.
+func TestWatcher_AtomicSave(t *testing.T) {
+	tempDir, cleanup := setupTestDir(t)
+	defer cleanup()
+
+	target := filepath.Join(tempDir, "doc.md")
+	require.NoError(t, os.WriteFile(target, []byte("# Original"), 0644))
+
+	engine := &mockEngine{}
+	watcher := newFastWatcher(t, tempDir, engine)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- watcher.Start(ctx) }()
+	time.Sleep(50 * time.Millisecond)
+
+	tmp := filepath.Join(tempDir, "doc.md.tmp~")
+	require.NoError(t, os.WriteFile(tmp, []byte("# Saved atomically"), 0644))
+	require.NoError(t, os.Rename(tmp, target))
+
+	assert.Eventually(t, func() bool { return engine.countSyncs(target) == 1 }, 2*time.Second, 20*time.Millisecond)
+
+	cancel()
+	<-done
 }
 
 func TestWatcher_Start_Integration(t *testing.T) {
@@ -434,7 +708,7 @@ func TestWatcher_Start_Integration(t *testing.T) {
 	defer func() { _ = watcher.Close() }()
 
 	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	// Start watcher in goroutine

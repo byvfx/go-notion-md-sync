@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -137,76 +138,16 @@ func (v UnifiedView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return v, nil
 
 		case "s":
-			// Start sync
-			if v.executor == nil {
-				v.errorMessage = "Cannot sync: configuration not loaded"
-				return v, v.clearErrorAfterDelay()
-			}
-			if !v.syncing {
-				v.syncing = true
-				v.syncProgress = "Starting sync..."
-				v.syncOps = []SyncOperation{} // Clear previous operations
-
-				// Get selected files
-				var selectedFiles []string
-				for file, selected := range v.selectedFiles {
-					if selected {
-						selectedFiles = append(selectedFiles, file)
-					}
-				}
-
-				// Execute sync command
-				return v, v.executor.ExecuteCommand(CommandSync, selectedFiles)
-			}
-			return v, nil
+			// Sync selected files
+			return v.startCommand(CommandSync, "sync", "Starting sync...")
 
 		case "p":
-			// Pull from Notion
-			if v.executor == nil {
-				v.errorMessage = "Cannot pull: configuration not loaded"
-				return v, v.clearErrorAfterDelay()
-			}
-			if !v.syncing {
-				v.syncing = true
-				v.syncProgress = "Starting pull from Notion..."
-				v.syncOps = []SyncOperation{} // Clear previous operations
-
-				// Get selected files
-				var selectedFiles []string
-				for file, selected := range v.selectedFiles {
-					if selected {
-						selectedFiles = append(selectedFiles, file)
-					}
-				}
-
-				// Execute pull command
-				return v, v.executor.ExecuteCommand(CommandPull, selectedFiles)
-			}
-			return v, nil
+			// Pull from Notion (selected files, or everything)
+			return v.startCommand(CommandPull, "pull", "Starting pull from Notion...")
 
 		case "P":
-			// Push to Notion
-			if v.executor == nil {
-				v.errorMessage = "Cannot push: configuration not loaded"
-				return v, v.clearErrorAfterDelay()
-			}
-			if !v.syncing {
-				v.syncing = true
-				v.syncProgress = "Starting push to Notion..."
-				v.syncOps = []SyncOperation{} // Clear previous operations
-
-				// Get selected files
-				var selectedFiles []string
-				for file, selected := range v.selectedFiles {
-					if selected {
-						selectedFiles = append(selectedFiles, file)
-					}
-				}
-
-				// Execute push command
-				return v, v.executor.ExecuteCommand(CommandPush, selectedFiles)
-			}
-			return v, nil
+			// Push to Notion (selected files, or everything)
+			return v.startCommand(CommandPush, "push", "Starting push to Notion...")
 
 		case "i":
 			// Initialize project
@@ -271,15 +212,17 @@ func (v UnifiedView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case CommandCompleteMsg:
 		v.syncing = false
 		v.syncProgress = msg.Message
-		v.updateSyncOperation(msg.Command, "Completed", msg.Duration)
+		status := "Completed"
+		if msg.Message != "" {
+			status = "Completed: " + msg.Message
+		}
+		v.updateSyncOperation(msg.Command, status, msg.Duration)
 		// Clear selection after successful sync and refresh file list
 		v.selectedFiles = make(map[string]bool)
-		// Update today's sync count
-		v.stats.today += len(v.syncOps)
+		v.stats.today += msg.Count
 
 		// For all commands, refresh the file list
 		// (init creates new files, sync operations may change file status)
-
 		return v, v.refreshFileList()
 
 	case CommandErrorMsg:
@@ -287,9 +230,11 @@ func (v UnifiedView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		v.lastError = msg.Error
 		v.errorMessage = msg.Error.Error()
 		v.syncProgress = fmt.Sprintf("❌ %s failed: %v", msg.Command, msg.Error)
-		v.updateSyncOperation(msg.Command, "Failed", 0)
-		// Clear error after 5 seconds
-		return v, v.clearErrorAfterDelay()
+		v.updateSyncOperation(msg.Command, "Failed: "+msg.Error.Error(), msg.Duration)
+		// Files synced before the failure still count, and their status
+		// changed, so refresh the list. The selection is kept for a retry.
+		v.stats.today += msg.Count
+		return v, tea.Batch(v.clearErrorAfterDelay(), v.refreshFileList())
 
 	case CommandBatchMsg:
 		// Process batch messages
@@ -314,34 +259,23 @@ func (v UnifiedView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return v, nil
 
 	case ProgressTickMsg:
-		if v.executor != nil && v.executor.isRunning {
-			// Create progress message from executor state
-			elapsed := time.Since(v.executor.operationStartTime)
-			progressMsg := fmt.Sprintf("%s (%.1fs elapsed)", v.executor.currentOperation, elapsed.Seconds())
-			if v.executor.lastProgressMsg != "" {
-				progressMsg = v.executor.lastProgressMsg
-			}
-
-			v.syncProgress = progressMsg
-
-			// Continue ticking while operation is running
-			return v, tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
-				return ProgressTickMsg{}
-			})
-		} else if v.executor != nil && !v.executor.isRunning && v.syncing {
-			// Operation completed
-			v.syncing = false
-			if strings.Contains(v.executor.lastProgressMsg, "Error:") {
-				v.errorMessage = v.executor.lastProgressMsg
-				return v, v.clearErrorAfterDelay()
-			} else {
-				v.syncProgress = v.executor.lastProgressMsg
-				// Update today's sync count and refresh file list
-				v.stats.today++
-				return v, v.refreshFileList()
-			}
+		if v.executor == nil {
+			return v, nil
 		}
-		return v, nil
+		progress := v.executor.Progress()
+		if !progress.Running || !v.syncing {
+			// Completion is reported by CommandCompleteMsg/CommandErrorMsg.
+			return v, nil
+		}
+		elapsed := time.Since(progress.StartTime)
+		progressMsg := fmt.Sprintf("%s (%.1fs elapsed)", progress.Operation, elapsed.Seconds())
+		if progress.Message != "" {
+			progressMsg = fmt.Sprintf("%s (%.1fs)", progress.Message, elapsed.Seconds())
+		}
+		v.syncProgress = progressMsg
+
+		// Continue ticking while operation is running
+		return v, progressTick()
 	}
 
 	// Update the focused pane
@@ -658,6 +592,42 @@ func (d *compactDelegate) Render(w io.Writer, m list.Model, index int, listItem 
 	} else {
 		_, _ = fmt.Fprint(w, str)
 	}
+}
+
+// updateSize returns the view resized to width x height.
+func (v UnifiedView) updateSize(width, height int) (UnifiedView, bool) {
+	model, _ := v.Update(tea.WindowSizeMsg{Width: width, Height: height})
+	u, ok := model.(UnifiedView)
+	return u, ok
+}
+
+// startCommand starts a sync command for the selected files.
+func (v UnifiedView) startCommand(cmd CommandType, verb, progress string) (tea.Model, tea.Cmd) {
+	if v.executor == nil {
+		v.errorMessage = fmt.Sprintf("Cannot %s: configuration not loaded", verb)
+		return v, v.clearErrorAfterDelay()
+	}
+	if v.syncing {
+		return v, nil
+	}
+
+	v.syncing = true
+	v.syncProgress = progress
+	v.syncOps = []SyncOperation{} // Clear previous operations
+
+	return v, v.executor.ExecuteCommand(cmd, v.selectedFileList())
+}
+
+// selectedFileList returns the selected file names in sorted order.
+func (v UnifiedView) selectedFileList() []string {
+	var files []string
+	for file, selected := range v.selectedFiles {
+		if selected {
+			files = append(files, file)
+		}
+	}
+	sort.Strings(files)
+	return files
 }
 
 // Helper methods for sync operations

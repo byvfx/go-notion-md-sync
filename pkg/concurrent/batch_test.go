@@ -559,3 +559,7 @@ func (m *mockConverter) MarkdownToBlocks(content string) ([]map[string]interface
 func (m *mockConverter) BlocksToMarkdown(blocks []notion.Block) (string, error) {
 	return "# Test Content", nil
 }
+
+func (m *mockNotionClient) UpdatePageProperties(ctx context.Context, pageID string, properties map[string]interface{}) (*notion.Page, error) {
+	return &notion.Page{ID: pageID}, nil
+}

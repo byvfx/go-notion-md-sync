@@ -535,3 +535,7 @@ func BenchmarkAnalysis(b *testing.B) {
 		})
 	}
 }
+
+func (m *benchmarkNotionClient) UpdatePageProperties(ctx context.Context, pageID string, properties map[string]interface{}) (*notion.Page, error) {
+	return &notion.Page{ID: pageID}, nil
+}
