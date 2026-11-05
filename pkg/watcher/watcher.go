@@ -53,6 +53,17 @@ type debouncer struct {
 
 // NewWatcher creates a watcher for cfg.Directories.MarkdownRoot and all of
 // its non-hidden, non-excluded subdirectories.
+// SetDebounceInterval sets how long the watcher waits after the last change
+// to a file before syncing it. Call it before Start.
+func (w *Watcher) SetDebounceInterval(d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	w.debouncer.mu.Lock()
+	w.debouncer.interval = d
+	w.debouncer.mu.Unlock()
+}
+
 func NewWatcher(cfg *config.Config, engine sync.Engine) (*Watcher, error) {
 	fsWatcher, err := fsnotify.NewWatcher()
 	if err != nil {

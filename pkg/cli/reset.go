@@ -82,14 +82,14 @@ func resetSpecificFiles(stagingArea *staging.StagingArea, files []string) error 
 	// Create a map for quick lookup
 	stagedMap := make(map[string]bool)
 	for _, file := range stagedFiles {
-		stagedMap[file] = true
+		stagedMap[stagingArea.NormalizePath(file)] = true
 	}
 
 	var resetFiles []string
 	var notStagedFiles []string
 
 	for _, file := range files {
-		if stagedMap[file] {
+		if stagedMap[stagingArea.NormalizePath(file)] {
 			if err := stagingArea.ResetFile(file); err != nil {
 				printVerbose("Warning: failed to reset %s: %v", file, err)
 				continue

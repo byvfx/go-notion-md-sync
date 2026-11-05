@@ -26,7 +26,7 @@ var (
 )
 
 func init() {
-	watchCmd.Flags().DurationVar(&watchInterval, "interval", 1*time.Second, "debounce interval for file changes")
+	watchCmd.Flags().DurationVar(&watchInterval, "interval", 1*time.Second, "how long to wait after a change before syncing the file")
 }
 
 func runWatch(cmd *cobra.Command, args []string) error {
@@ -47,6 +47,7 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create watcher: %w", err)
 	}
+	w.SetDebounceInterval(watchInterval)
 	defer func() {
 		if err := w.Close(); err != nil {
 			fmt.Printf("Warning: failed to close watcher: %v\n", err)
