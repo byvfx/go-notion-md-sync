@@ -181,11 +181,25 @@ func (s *StagingArea) GetStatus() (map[string]FileStatus, error) {
 	// Persist refreshed timestamps once, after all workers have finished.
 	// This only refreshes cached metadata, so a failure (e.g. a read-only
 	// checkout) must not prevent reporting the status.
+	// The index is re-read first so a concurrent writer (another process,
+	// such as the CLI while the TUI is open) is not overwritten with stale
+	// entries; only unchanged entries get the new timestamp.
 	if len(refreshed) > 0 {
-		for key, entry := range refreshed {
-			index[key] = entry
+		if latest, err := s.loadIndex(); err == nil {
+			changed := false
+			for key, entry := range refreshed {
+				cur, ok := latest[key]
+				if !ok || cur.Hash != entry.Hash || cur.Staged != entry.Staged {
+					continue
+				}
+				cur.LastModified = entry.LastModified
+				latest[key] = cur
+				changed = true
+			}
+			if changed {
+				_ = s.saveIndex(latest)
+			}
 		}
-		_ = s.saveIndex(index)
 	}
 
 	return status, nil
