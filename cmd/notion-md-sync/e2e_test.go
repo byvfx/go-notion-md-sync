@@ -229,9 +229,17 @@ func TestEndToEnd(t *testing.T) {
 	assert.Equal(t, 0, api.Writes, "unchanged files must not be rewritten in Notion")
 
 	// --- Edit the parent page and push: sub-pages, the database and the
-	// columns must survive, and the text stays in place.
+	// columns must survive, and the text stays in place. The edited block is
+	// changed in place and the others are left alone, so all keep their IDs.
+	helloBlock := api.FindBlock(e.root, "Hello")
+	welcomeBlock := api.FindBlock(e.root, "Welcome")
+	writesBefore := api.Writes
 	e.replace("Team Wiki/Team Wiki.md", "Hello **bold** world", "Hello **bold** world, edited locally")
 	e.run("sync", "--direction", "push")
+	assert.Equal(t, helloBlock, api.FindBlock(e.root, "edited locally"), "an edited block keeps its ID")
+	assert.Equal(t, welcomeBlock, api.FindBlock(e.root, "Welcome"), "an unchanged block keeps its ID")
+	assert.Equal(t, 1, api.Updates)
+	assert.Equal(t, writesBefore+1, api.Writes, "a one-line edit is one write")
 	subPages := api.SubPages(e.root)
 	require.Contains(t, subPages, "Meeting Notes")
 	require.Contains(t, subPages, "Ideas")

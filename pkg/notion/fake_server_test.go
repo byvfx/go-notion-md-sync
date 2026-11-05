@@ -26,6 +26,9 @@ type fakeNotion struct {
 
 	failPatchAt   int // fail the Nth PATCH request (1-based); 0 = never
 	patchCount    int
+	failUpdateAt  int // fail the Nth block update (1-based); 0 = never
+	updates       []string
+	appended      int // blocks created by appends
 	rateLimitLeft int // respond 429 to this many requests first
 	deleted       []string
 	requests      []string
@@ -93,6 +96,9 @@ func (f *fakeNotion) outline(parent string) []string {
 	return out
 }
 
+// atStart, passed as insert's after, inserts at the start.
+const atStart = "\x00start"
+
 func (f *fakeNotion) insert(parent string, raw []interface{}, after string, depth int) ([]string, error) {
 	if len(raw) > 100 {
 		return nil, fmt.Errorf("children length %d > 100", len(raw))
@@ -113,6 +119,7 @@ func (f *fakeNotion) insert(parent string, raw []interface{}, after string, dept
 		f.nextID++
 		id := fmt.Sprintf("00000000-0000-0000-0000-%012d", f.nextID)
 		f.blocks[id] = map[string]interface{}{"id": id, "object": "block", "type": t, t: inner}
+		f.appended++
 		ids = append(ids, id)
 		if len(kids) > 0 {
 			if _, err := f.insert(id, kids, "", depth+1); err != nil {
@@ -122,7 +129,9 @@ func (f *fakeNotion) insert(parent string, raw []interface{}, after string, dept
 	}
 	list := f.children[parent]
 	pos := len(list)
-	if after != "" {
+	if after == atStart {
+		pos = 0
+	} else if after != "" {
 		pos = -1
 		for i, c := range list {
 			if c == after {
@@ -202,9 +211,14 @@ func (f *fakeNotion) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		after := ""
-		if pos, ok := req["position"].(map[string]interface{}); ok && pos["type"] == "after_block" {
-			ab, _ := pos["after_block"].(map[string]interface{})
-			after, _ = ab["id"].(string)
+		if pos, ok := req["position"].(map[string]interface{}); ok {
+			switch pos["type"] {
+			case "after_block":
+				ab, _ := pos["after_block"].(map[string]interface{})
+				after, _ = ab["id"].(string)
+			case "start":
+				after = atStart
+			}
 		}
 		kids, _ := req["children"].([]interface{})
 		total := 0
@@ -238,6 +252,42 @@ func (f *fakeNotion) serve(w http.ResponseWriter, r *http.Request) {
 			results = append(results, f.blockJSON(id))
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"object": "list", "results": results})
+
+	case r.Method == "PATCH" && len(parts) == 2 && parts[0] == "blocks":
+		id := parts[1]
+		b, ok := f.blocks[id]
+		if !ok {
+			fail(404, "block not found: "+id)
+			return
+		}
+		f.updates = append(f.updates, id)
+		if f.failUpdateAt > 0 && len(f.updates) == f.failUpdateAt {
+			fail(400, "simulated update failure")
+			return
+		}
+		var req map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		t := b["type"].(string)
+		for k := range req {
+			if k != t {
+				fail(400, fmt.Sprintf("block %s is a %s, not a %s", id, t, k))
+				return
+			}
+		}
+		fields, _ := req[t].(map[string]interface{})
+		if _, ok := fields["children"]; ok {
+			fail(400, "children can't be updated")
+			return
+		}
+		inner, _ := b[t].(map[string]interface{})
+		if inner == nil {
+			inner = map[string]interface{}{}
+			b[t] = inner
+		}
+		for k, v := range fields {
+			inner[k] = v
+		}
+		_ = json.NewEncoder(w).Encode(f.blockJSON(id))
 
 	case r.Method == "DELETE" && len(parts) == 2 && parts[0] == "blocks":
 		id := parts[1]

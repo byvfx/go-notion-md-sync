@@ -332,18 +332,24 @@ func (c *client) UpdatePageProperties(ctx context.Context, pageID string, proper
 	return &page, nil
 }
 
-// UpdatePageBlocks replaces a page's content with blocks.
+// UpdatePageBlocks makes a page's content match blocks.
+//
+// Existing blocks that blocks still contains are left alone, and edited
+// blocks are changed in place when their type allows it, so they keep their
+// IDs (and the comments and links attached to them); only what is new is
+// added and only what is gone is deleted. See blockdiff.go.
 //
 // It is designed not to lose data:
 //   - Sub-pages, databases, Notion-hosted images, block types that can't be
 //     round-tripped through Markdown, and any block that contains one of those
-//     are never deleted.
-//   - New blocks are added first and old blocks are deleted only after every
-//     new block was created. If adding fails, the blocks added so far are
-//     removed again and the page is left as it was.
+//     are never deleted or changed.
+//   - New blocks are added first, then blocks are changed in place, and old
+//     blocks are deleted only after all of that succeeded. If a step fails,
+//     the added blocks are removed and changed blocks are written back, so
+//     the page is left as it was.
 //
 // blocks may contain AnchorBlock placeholders; the blocks after an anchor are
-// inserted right below that existing block, which keeps text in its place
+// placed right below that existing block, which keeps text in its place
 // around sub-pages and databases.
 func (c *client) UpdatePageBlocks(ctx context.Context, pageID string, blocks []map[string]interface{}) error {
 	existing, err := c.getBlockTree(ctx, pageID)
@@ -351,84 +357,184 @@ func (c *client) UpdatePageBlocks(ctx context.Context, pageID string, blocks []m
 		return fmt.Errorf("failed to get existing blocks: %w", withPageID(err, pageID))
 	}
 
-	preserved := make(map[string]bool)
-	var deletable []string
-	// anchorForStart is the last deletable block before the first preserved
-	// block. Inserting after it puts new leading content above that block.
-	anchorForStart := ""
-	seenPreserved := false
-	for i := range existing {
-		b := &existing[i]
-		if ShouldPreserveTree(b) {
-			preserved[b.ID] = true
-			seenPreserved = true
-			continue
-		}
-		deletable = append(deletable, b.ID)
-		if !seenPreserved {
-			anchorForStart = b.ID
-		}
+	var plan pushPlan
+	if err := c.syncChildren(ctx, pageID, existing, blocks, &plan); err != nil {
+		c.deleteBlocks(ctx, plan.created)
+		return fmt.Errorf("failed to update blocks for page %s: %w", pageID, withPageID(err, pageID))
 	}
-
-	segments := splitAtAnchors(blocks)
-
-	var created []string
-	rollback := func() {
-		if len(created) > 0 {
-			c.deleteBlocks(ctx, created)
-		}
-	}
-
-	after := ""
-	for i, seg := range segments {
-		switch {
-		case i == 0:
-			if seenPreserved {
-				after = anchorForStart
-				if after == "" && len(seg.blocks) > 0 && len(existing) > 0 {
-					fmt.Fprintf(os.Stderr, "Warning: page %s starts with a sub-page or other kept block; content above it is added at the end of the page\n", pageID)
+	for i, u := range plan.updates {
+		if err := c.doJSON(ctx, "PATCH", "/blocks/"+u.id, u.body, nil); err != nil {
+			for j := i - 1; j >= 0; j-- {
+				if rerr := c.doJSON(ctx, "PATCH", "/blocks/"+plan.updates[j].id, plan.updates[j].revert, nil); rerr != nil {
+					fmt.Fprintf(os.Stderr, "Warning: could not restore block %s: %v\n", plan.updates[j].id, rerr)
 				}
 			}
-		case preserved[seg.anchor]:
-			after = seg.anchor
-		default:
-			// The anchor no longer exists on the page; keep the content
-			// right after whatever was added before it.
-		}
-		ids, err := c.appendBlocks(ctx, pageID, seg.blocks, after)
-		created = append(created, ids...)
-		if err != nil {
-			rollback()
-			return fmt.Errorf("failed to update blocks for page %s: %w", pageID, withPageID(err, pageID))
-		}
-		if len(ids) > 0 {
-			after = ids[len(ids)-1]
+			c.deleteBlocks(ctx, plan.created)
+			return fmt.Errorf("failed to update block %s on page %s: %w", u.id, pageID, withPageID(err, pageID))
 		}
 	}
-
-	c.deleteBlocks(ctx, deletable)
+	c.deleteBlocks(ctx, plan.deletes)
 	return nil
 }
 
-type blockSegment struct {
-	anchor string
-	blocks []map[string]interface{}
+// pushPlan collects what a push did and still has to do.
+type pushPlan struct {
+	created []string      // blocks added so far (removed again on failure)
+	updates []blockUpdate // in-place changes, applied after all additions
+	deletes []string      // blocks to delete once everything else worked
 }
 
-// splitAtAnchors splits a block list at AnchorBlock placeholders. The first
-// segment has no anchor.
-func splitAtAnchors(blocks []map[string]interface{}) []blockSegment {
-	segments := []blockSegment{{}}
-	for _, b := range blocks {
-		if t, _ := b["type"].(string); t == AnchorBlockType {
-			id, _ := b[AnchorBlockType].(string)
-			segments = append(segments, blockSegment{anchor: id})
+// blockUpdate is an in-place change of one block, with the body that
+// restores it.
+type blockUpdate struct {
+	id           string
+	body, revert map[string]interface{}
+}
+
+// syncChildren makes the children of parentID (currently existing) match
+// desired. Blocks are added right away; in-place updates and deletions are
+// recorded in plan.
+func (c *client) syncChildren(ctx context.Context, parentID string, existing []Block, desired []map[string]interface{}, plan *pushPlan) error {
+	eForms := make([]blockForm, len(existing))
+	eKeys := make([]string, len(existing))
+	keptIDs := map[string]string{} // normalized ID -> ID of kept blocks
+	for i := range existing {
+		b := &existing[i]
+		if ShouldPreserveTree(b) {
+			keptIDs[normalizeBlockID(b.ID)] = b.ID
+			eKeys[i] = anchorKey(b.ID)
 			continue
 		}
-		last := &segments[len(segments)-1]
-		last.blocks = append(last.blocks, b)
+		eForms[i] = formOfExisting(b)
+		eKeys[i] = fingerprint(eForms[i])
 	}
-	return segments
+	dForms := make([]blockForm, len(desired))
+	dKeys := make([]string, len(desired))
+	for j, d := range desired {
+		if t, _ := d["type"].(string); t == AnchorBlockType {
+			id, _ := d[AnchorBlockType].(string)
+			dKeys[j] = anchorKey(id)
+			continue
+		}
+		dForms[j] = formOfNew(d)
+		dKeys[j] = fingerprint(dForms[j])
+	}
+	match := matchSequences(eKeys, dKeys)
+
+	// prev is where the next new block goes: after this block, or at the
+	// start of an empty position.
+	prev := positionStart
+	if len(existing) == 0 {
+		prev = ""
+	}
+	var pending []map[string]interface{}
+	flush := func() error {
+		if len(pending) == 0 {
+			return nil
+		}
+		ids, err := c.appendBlocks(ctx, parentID, pending, prev)
+		plan.created = append(plan.created, ids...)
+		pending = nil
+		if err != nil {
+			return err
+		}
+		if len(ids) > 0 {
+			prev = ids[len(ids)-1]
+		}
+		return nil
+	}
+
+	// Walk the desired blocks from one matched block to the next. The
+	// unmatched existing blocks in between are reused for edited blocks of
+	// the same type, or deleted.
+	lastE := -1
+	for j := 0; j <= len(desired); {
+		next := j
+		for next < len(desired) && match[next] < 0 {
+			next++
+		}
+		nextE := len(existing)
+		if next < len(desired) {
+			nextE = match[next]
+		}
+		var gap []int
+		for i := lastE + 1; i < nextE; i++ {
+			if eForms[i] != nil {
+				gap = append(gap, i)
+			}
+		}
+		// When as many blocks replace as many old ones, they are edits of
+		// those, in order. Otherwise a block only reuses an old one whose
+		// text it resembles.
+		content := 0
+		for k := j; k < next; k++ {
+			if dForms[k] != nil {
+				content++
+			}
+		}
+		oneToOne := content == len(gap)
+		g := 0
+		for k := j; k < next; k++ {
+			if dForms[k] == nil {
+				// An anchor whose block is out of order: put what follows
+				// right below it, if it still exists.
+				id, _ := desired[k][AnchorBlockType].(string)
+				if kept, ok := keptIDs[normalizeBlockID(id)]; ok {
+					if err := flush(); err != nil {
+						return err
+					}
+					prev = kept
+				}
+				continue
+			}
+			found := -1
+			for x := g; x < len(gap); x++ {
+				if canUpdateInPlace(eForms[gap[x]], dForms[k]) && (oneToOne || similarText(eForms[gap[x]], dForms[k])) {
+					found = x
+					break
+				}
+			}
+			if found < 0 {
+				pending = append(pending, desired[k])
+				continue
+			}
+			if err := flush(); err != nil {
+				return err
+			}
+			for x := g; x < found; x++ {
+				plan.deletes = append(plan.deletes, existing[gap[x]].ID)
+			}
+			e := &existing[gap[found]]
+			if ownFingerprint(eForms[gap[found]]) != ownFingerprint(dForms[k]) {
+				plan.updates = append(plan.updates, blockUpdate{id: e.ID, body: updateBody(dForms[k]), revert: updateBody(eForms[gap[found]])})
+			}
+			if err := c.syncChildren(ctx, e.ID, e.Children, blockChildren(desired[k]), plan); err != nil {
+				return err
+			}
+			prev = e.ID
+			g = found + 1
+		}
+		if err := flush(); err != nil {
+			return err
+		}
+		for x := g; x < len(gap); x++ {
+			plan.deletes = append(plan.deletes, existing[gap[x]].ID)
+		}
+		if next < len(desired) {
+			prev = existing[nextE].ID
+			lastE = nextE
+		}
+		j = next + 1
+	}
+	return nil
+}
+
+func anchorKey(id string) string {
+	return "\x00anchor:" + normalizeBlockID(id)
+}
+
+func normalizeBlockID(id string) string {
+	return strings.ToLower(strings.ReplaceAll(id, "-", ""))
 }
 
 const (
@@ -485,9 +591,13 @@ type pendingChildren struct {
 	blocks     []map[string]interface{}
 }
 
-// appendBlocks appends blocks to parentID (after the block "after", or at the
-// end when after is ""). It returns the IDs of the created top-level blocks,
-// including those created before an error.
+// positionStart, passed as appendBlocks' after, inserts at the start.
+const positionStart = "\x00start"
+
+// appendBlocks appends blocks to parentID (after the block "after", at the
+// start when after is positionStart, or at the end when after is ""). It
+// returns the IDs of the created top-level blocks, including those created
+// before an error.
 func (c *client) appendBlocks(ctx context.Context, parentID string, blocks []map[string]interface{}, after string) ([]string, error) {
 	var created []string
 	for start := 0; start < len(blocks); {
@@ -511,7 +621,11 @@ func (c *client) appendBlocks(ctx context.Context, parentID string, blocks []map
 		}
 
 		req := map[string]interface{}{"children": batch}
-		if after != "" {
+		switch after {
+		case "":
+		case positionStart:
+			req["position"] = map[string]interface{}{"type": "start"}
+		default:
 			req["position"] = afterBlock(after)
 		}
 		var resp BlocksResponse
@@ -570,8 +684,9 @@ func afterBlock(id string) map[string]interface{} {
 }
 
 // locateCreated finds the IDs of n newly created blocks in a list of blocks:
-// the n blocks right after the block "after", or the last n blocks when after
-// is "". Notion's append response sometimes lists only the new blocks and
+// the n blocks right after the block "after", the first n blocks when after
+// is positionStart, or the last n blocks when after is "". Notion's append
+// response sometimes lists only the new blocks and
 // sometimes all children of the parent, so both shapes are handled.
 func locateCreated(results []Block, after string, n int) ([]string, bool) {
 	ids := func(bs []Block) []string {
@@ -584,11 +699,14 @@ func locateCreated(results []Block, after string, n int) ([]string, bool) {
 	if len(results) == n {
 		return ids(results), true
 	}
-	if after == "" {
-		if len(results) < n {
-			return nil, false
-		}
+	if len(results) < n {
+		return nil, false
+	}
+	switch after {
+	case "":
 		return ids(results[len(results)-n:]), true
+	case positionStart:
+		return ids(results[:n]), true
 	}
 	for i, b := range results {
 		if b.ID == after {

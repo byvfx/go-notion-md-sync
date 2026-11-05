@@ -42,6 +42,8 @@ type Server struct {
 
 	// Writes counts block and page changes (appends, deletes, updates).
 	Writes int
+	// Updates counts blocks changed in place.
+	Updates int
 	// Requests logs "METHOD /path" for every request.
 	Requests []string
 }
@@ -439,6 +441,9 @@ func validate(b map[string]interface{}) error {
 	return nil
 }
 
+// atStart, passed as an insert's after, inserts at the start.
+const atStart = "\x00start"
+
 func (s *Server) insertLocked(parent string, raw []interface{}, after string, depth int) ([]string, error) {
 	return s.insertCheckedLocked(parent, raw, after, depth, true)
 }
@@ -497,7 +502,9 @@ func (s *Server) insertCheckedLocked(parent string, raw []interface{}, after str
 	}
 	list := s.children[parent]
 	pos := len(list)
-	if after != "" {
+	if after == atStart {
+		pos = 0
+	} else if after != "" {
 		pos = -1
 		for i, c := range list {
 			if c == after {
@@ -731,6 +738,8 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			case "after_block":
 				ab, _ := pos["after_block"].(map[string]interface{})
 				after, _ = ab["id"].(string)
+			case "start":
+				after = atStart
 			case "end", nil:
 			default:
 				apiError(w, 400, "validation_error", fmt.Sprintf("unsupported position type %v", pos["type"]))
@@ -749,6 +758,41 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			results = append(results, s.blockJSON(id))
 		}
 		writeJSON(w, 200, map[string]interface{}{"object": "list", "results": results})
+
+	case r.Method == "PATCH" && len(parts) == 2 && parts[0] == "blocks":
+		id := parts[1]
+		o, ok := s.objects[id]
+		if !ok || o["object"] != "block" {
+			notFound(id)
+			return
+		}
+		t, _ := o["type"].(string)
+		for k := range body {
+			if k != t {
+				apiError(w, 400, "validation_error", fmt.Sprintf("block %s is a %s; body.%s can't be set", id, t, k))
+				return
+			}
+		}
+		fields, _ := body[t].(map[string]interface{})
+		if _, ok := fields["children"]; ok {
+			apiError(w, 400, "validation_error", "children can't be changed by updating a block")
+			return
+		}
+		if err := validate(map[string]interface{}{"type": t, t: fields}); err != nil {
+			apiError(w, 400, "validation_error", err.Error())
+			return
+		}
+		inner, _ := o[t].(map[string]interface{})
+		for k, v := range fields {
+			if rt, ok := v.([]interface{}); ok && k == "rich_text" {
+				v = withPlainText(rt)
+			}
+			inner[k] = v
+		}
+		s.Writes++
+		s.Updates++
+		s.touchLocked(s.pageOfLocked(id))
+		writeJSON(w, 200, s.blockJSON(id))
 
 	case r.Method == "DELETE" && len(parts) == 2 && parts[0] == "blocks":
 		id := parts[1]
