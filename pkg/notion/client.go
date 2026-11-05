@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -83,13 +84,25 @@ func (e *NotionAPIError) Error() string {
 	return fmt.Sprintf("notion api error %d%s: %s", e.Code, code, e.Message)
 }
 
+// APIURLEnv names an environment variable that overrides the Notion API
+// address, for testing against a local server or going through a gateway.
+const APIURLEnv = "NOTION_MD_SYNC_API_URL"
+
+// apiBaseURL returns the Notion API address to use.
+func apiBaseURL() string {
+	if u := strings.TrimRight(os.Getenv(APIURLEnv), "/"); u != "" {
+		return u
+	}
+	return BaseURL
+}
+
 func NewClient(token string) Client {
 	return &client{
 		httpClient: &http.Client{
 			Timeout: DefaultTimeout,
 		},
 		token:          token,
-		baseURL:        BaseURL,
+		baseURL:        apiBaseURL(),
 		retryBaseDelay: 500 * time.Millisecond,
 		deleteDelay:    50 * time.Millisecond,
 	}
