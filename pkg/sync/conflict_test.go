@@ -209,11 +209,11 @@ func TestHasConflict_Normalization(t *testing.T) {
 }
 
 func TestResolveConflictAt_PromptStopsOnCancel(t *testing.T) {
-	r, w := io.Pipe() // nobody ever answers
+	r, w := io.Pipe()
 	defer func() { _ = w.Close() }()
-	old := promptInput
-	promptInput = r
-	defer func() { promptInput = old }()
+	old := prompts
+	prompts = newLineReader(r)
+	defer func() { prompts = old }()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -228,4 +228,10 @@ func TestResolveConflictAt_PromptStopsOnCancel(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("the conflict prompt ignored cancellation")
 	}
+
+	// An answer typed after the cancelled prompt goes to the next prompt.
+	go func() { _, _ = w.Write([]byte("r\n")) }()
+	got, err := NewConflictResolver("diff").ResolveConflictAt(context.Background(), "local", "remote", "f.md", time.Time{}, time.Time{})
+	assert.NoError(t, err)
+	assert.Equal(t, "remote", got, "the answer must not be lost to the cancelled prompt")
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	gosync "sync"
 	"time"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
@@ -75,32 +76,62 @@ func (cr *ConflictResolver) resolveByDiff(localContent, remoteContent, filePath 
 	return cr.resolveByDiffCtx(context.Background(), localContent, remoteContent, filePath)
 }
 
-// promptInput is where conflict answers are read from (stdin; tests replace
-// it).
-var promptInput io.Reader = os.Stdin
+// lineReader reads lines from one input in a single background goroutine.
+// Lines that arrive after a prompt was cancelled stay queued for the next
+// prompt, and a cancelled prompt leaves no goroutine behind.
+type lineReader struct {
+	in    io.Reader
+	once  gosync.Once
+	lines chan lineResult
+}
 
-// readAnswer reads a line from promptInput, giving up when ctx ends.
-func readAnswer(ctx context.Context) (string, error) {
-	type result struct {
-		line string
-		err  error
-	}
-	ch := make(chan result, 1)
-	in := promptInput
+type lineResult struct {
+	line string
+	err  error
+}
+
+func newLineReader(in io.Reader) *lineReader {
+	return &lineReader{in: in, lines: make(chan lineResult, 16)}
+}
+
+func (l *lineReader) start() {
 	go func() {
-		line, err := bufio.NewReader(in).ReadString('\n')
-		ch <- result{line, err}
-	}()
-	select {
-	case r := <-ch:
-		if r.err != nil && r.line == "" {
-			return "", r.err
+		r := bufio.NewReader(l.in)
+		for {
+			line, err := r.ReadString('\n')
+			if line != "" || err == nil {
+				l.lines <- lineResult{line: line}
+			}
+			if err != nil {
+				l.lines <- lineResult{err: err}
+				close(l.lines)
+				return
+			}
 		}
-		return r.line, nil
+	}()
+}
+
+// next returns the next line, or an error when the input ends or ctx does.
+func (l *lineReader) next(ctx context.Context) (string, error) {
+	l.once.Do(l.start)
+	select {
+	case r, ok := <-l.lines:
+		if !ok {
+			return "", io.EOF
+		}
+		return r.line, r.err
 	case <-ctx.Done():
 		fmt.Println()
 		return "", ctx.Err()
 	}
+}
+
+// prompts is where conflict answers are read from (stdin; tests replace it).
+var prompts = newLineReader(os.Stdin)
+
+// readAnswer reads one answer, giving up when ctx ends.
+func readAnswer(ctx context.Context) (string, error) {
+	return prompts.next(ctx)
 }
 
 func (cr *ConflictResolver) resolveByDiffCtx(ctx context.Context, localContent, remoteContent, filePath string) (string, error) {

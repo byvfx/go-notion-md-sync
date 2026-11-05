@@ -299,3 +299,12 @@ func TestConverter_FencesInsideListItems(t *testing.T) {
 		})
 	}
 }
+
+func TestConverter_QuotedFenceLineInsideCodeIsCode(t *testing.T) {
+	id := "11111111-2222-3333-4444-555555555555"
+	md := "```\n> ```\n" + markerComment("child_page", id) + "\n```"
+	blocks := toBlocks(t, md)
+	require.Len(t, blocks, 1)
+	assert.Equal(t, "code", blocks[0]["type"])
+	assert.Contains(t, fmt.Sprint(blocks), "notion:child_page", "the marker text stays in the code")
+}

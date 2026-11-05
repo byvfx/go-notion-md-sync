@@ -73,36 +73,40 @@ func regionEnd(id string) string {
 type fenceTracker struct {
 	char byte
 	n    int
+	// quoted is set when the opening fence was inside a blockquote; only
+	// then may a closing fence be preceded by ">".
+	quoted bool
 }
 
 // update consumes a line and reports whether it is inside (or delimits) a
-// fenced code block. Fences may be indented (inside list items) or follow a
-// list marker or quote marker on the same line.
+// fenced code block. An opening fence may be indented (inside list items) or
+// follow a list or quote marker on the same line. A closing fence may only be
+// indented, or quoted if the opening one was: a literal "> ```" or "- ```"
+// line inside a plain code block is code, not the end of the block.
 func (f *fenceTracker) update(line string) bool {
-	trimmed := stripContainerPrefix(line)
 	if f.n == 0 {
+		prefix := containerPrefixRe.FindString(line)
+		trimmed := line[len(prefix):]
 		if c, n := fenceRun(trimmed); n >= 3 {
 			if c == '`' && strings.Contains(trimmed[n:], "`") {
 				return false // not a fence: backticks in the info string
 			}
-			f.char, f.n = c, n
+			f.char, f.n, f.quoted = c, n, strings.Contains(prefix, ">")
 			return true
 		}
 		return false
 	}
-	if c, n := fenceRun(trimmed); c == f.char && n >= f.n && strings.TrimSpace(trimmed[n:]) == "" {
+	closing := strings.TrimLeft(line, " \t")
+	if f.quoted {
+		closing = strings.TrimLeft(closing, "> \t")
+	}
+	if c, n := fenceRun(closing); c == f.char && n >= f.n && strings.TrimSpace(closing[n:]) == "" {
 		f.n = 0
 	}
 	return true
 }
 
 var containerPrefixRe = regexp.MustCompile(`^(?:\s*(?:>|[-*+]|[0-9]{1,9}[.)])(?:\s+|$))*\s*`)
-
-// stripContainerPrefix removes indentation and list or quote markers from
-// the start of a line.
-func stripContainerPrefix(line string) string {
-	return line[len(containerPrefixRe.FindString(line)):]
-}
 
 func fenceRun(s string) (byte, int) {
 	if s == "" || (s[0] != '`' && s[0] != '~') {
