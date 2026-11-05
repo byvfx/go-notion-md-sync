@@ -844,3 +844,66 @@ func TestWatcher_ExcludedPatterns_Integration(t *testing.T) {
 		t.Error("Watcher did not return within timeout")
 	}
 }
+
+// An edit saved while a push is running must not be mistaken for the
+// engine's own frontmatter write-back.
+func TestWatcher_EditDuringPushStaysPending(t *testing.T) {
+	tempDir, cleanup := setupTestDir(t)
+	defer cleanup()
+
+	engine := &mockEngine{}
+	watcher := newFastWatcher(t, tempDir, engine)
+	ctx := context.Background()
+
+	testFile := filepath.Join(tempDir, "page.md")
+	require.NoError(t, os.WriteFile(testFile, []byte("# Page\n\nfirst\n"), 0644))
+
+	var once sync.Once
+	engine.setOnSync(func(filePath string) {
+		once.Do(func() {
+			// The user saves again while the first push is in flight, and
+			// the engine writes frontmatter around the uploaded version.
+			_ = os.WriteFile(filePath, []byte("---\nnotion_id: abc\n---\n\n# Page\n\nsecond\n"), 0644)
+		})
+	})
+
+	watcher.handleEvent(ctx, fsnotify.Event{Name: testFile, Op: fsnotify.Write})
+	assert.Eventually(t, func() bool { return engine.countSyncs(testFile) == 1 }, 2*time.Second, 10*time.Millisecond)
+
+	// The event for the second save arrives.
+	watcher.handleEvent(ctx, fsnotify.Event{Name: testFile, Op: fsnotify.Write})
+	assert.Eventually(t, func() bool { return engine.countSyncs(testFile) == 2 }, 2*time.Second, 10*time.Millisecond,
+		"the edit saved during the push must be pushed too")
+}
+
+// A folder moved into the watched tree produces no events for the files
+// already in it; they must be synced anyway.
+func TestWatcher_MovedInFolderIsSynced(t *testing.T) {
+	tempDir, cleanup := setupTestDir(t)
+	defer cleanup()
+
+	engine := &mockEngine{}
+	watcher := newFastWatcher(t, tempDir, engine)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- watcher.Start(ctx) }()
+
+	outside := filepath.Join(t.TempDir(), "Imported")
+	require.NoError(t, os.MkdirAll(filepath.Join(outside, "Deep"), 0755))
+	top := filepath.Join(outside, "Imported.md")
+	deep := filepath.Join(outside, "Deep", "Deep.md")
+	require.NoError(t, os.WriteFile(top, []byte("# Imported"), 0644))
+	require.NoError(t, os.WriteFile(deep, []byte("# Deep"), 0644))
+
+	target := filepath.Join(tempDir, "Imported")
+	require.NoError(t, os.Rename(outside, target))
+
+	assert.Eventually(t, func() bool {
+		return engine.countSyncs(filepath.Join(target, "Imported.md")) == 1 &&
+			engine.countSyncs(filepath.Join(target, "Deep", "Deep.md")) == 1
+	}, 3*time.Second, 20*time.Millisecond)
+
+	cancel()
+	<-done
+}

@@ -525,8 +525,14 @@ func (e *engine) syncPagesConcurrently(ctx context.Context, pages []notion.Page,
 		go e.syncWorker(ctx, pageJobs, results, plan)
 	}
 
+	jobs := 0
 	for i := range pages {
 		path, _ := plan.path(pages[i].ID)
+		if e.isExcluded(path) {
+			fmt.Printf("[%d/%d] Skipping %s (excluded path %s)\n", i+1, len(pages), e.extractTitleFromPage(&pages[i]), e.describePath(path))
+			continue
+		}
+		jobs++
 		pageJobs <- pageJob{
 			page:     pages[i],
 			title:    e.extractTitleFromPage(&pages[i]),
@@ -539,7 +545,7 @@ func (e *engine) syncPagesConcurrently(ctx context.Context, pages []notion.Page,
 
 	var errs []string
 	successCount := 0
-	for i := 0; i < len(pages); i++ {
+	for i := 0; i < jobs; i++ {
 		result := <-results
 		if result.err != nil {
 			errs = append(errs, fmt.Sprintf("Page %s: %v", result.pageID, result.err))
@@ -548,7 +554,7 @@ func (e *engine) syncPagesConcurrently(ctx context.Context, pages []notion.Page,
 		}
 	}
 
-	fmt.Printf("\n🎉 Concurrent sync complete! %d/%d pages successful\n", successCount, len(pages))
+	fmt.Printf("\n🎉 Concurrent sync complete! %d/%d pages successful\n", successCount, jobs)
 
 	if len(errs) > 0 {
 		util.ErrorMsg("%d pages failed", len(errs))
@@ -651,6 +657,9 @@ func (e *engine) syncBidirectional(ctx context.Context) error {
 			continue
 		}
 		path, _ := plan.path(pages[i].ID)
+		if e.isExcluded(path) {
+			continue
+		}
 		if _, err := os.Stat(path); err == nil {
 			// Something else is already there (for example a page that
 			// was just pushed); don't overwrite it.

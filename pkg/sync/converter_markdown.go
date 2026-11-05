@@ -320,7 +320,11 @@ func (r *mdRenderer) table(b *notion.Block) string {
 
 // preserved renders a top-level block that is kept as-is in Notion.
 func (r *mdRenderer) preserved(b *notion.Block) string {
-	if len(b.Children) == 0 || b.Type == "child_page" || b.Type == "child_database" {
+	// A one-line stand-in, unless the block has content worth showing (its
+	// children, or its own text when it is a normally supported type kept
+	// for something like a mention).
+	if b.Type == "child_page" || b.Type == "child_database" ||
+		(len(b.Children) == 0 && (!notion.IsRoundTripType(b.Type) || b.Type == "image")) {
 		return r.describe(b, false) + " " + markerComment(b.Type, b.ID)
 	}
 	var inner string

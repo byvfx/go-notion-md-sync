@@ -50,7 +50,62 @@ func IsPreservedBlock(b *Block) bool {
 	if b.Type == "image" && b.Image != nil && b.Image.File != nil {
 		return true
 	}
+	// Toggleable headings have no Markdown form; re-creating them would make
+	// them plain headings.
+	for _, h := range []*RichTextBlock{b.Heading1, b.Heading2, b.Heading3} {
+		if h != nil && h.IsToggleable {
+			return true
+		}
+	}
+	// Mentions (pages, people, dates) and inline equations would come back
+	// as plain text.
+	for _, rts := range richTextsOf(b) {
+		for _, rt := range rts {
+			if rt.Type != "" && rt.Type != "text" {
+				return true
+			}
+		}
+	}
 	return false
+}
+
+// IsRoundTripType reports whether blocks of this type can normally be
+// converted to Markdown and back.
+func IsRoundTripType(blockType string) bool {
+	return roundTripBlockTypes[blockType]
+}
+
+// richTextsOf returns every rich text array in a block (text, table cells,
+// captions).
+func richTextsOf(b *Block) [][]RichText {
+	var out [][]RichText
+	for _, r := range []*RichTextBlock{b.Paragraph, b.Heading1, b.Heading2, b.Heading3, b.BulletedListItem, b.NumberedListItem, b.Quote} {
+		if r != nil {
+			out = append(out, r.RichText)
+		}
+	}
+	if b.ToDo != nil {
+		out = append(out, b.ToDo.RichText)
+	}
+	if b.Code != nil {
+		out = append(out, b.Code.RichText)
+	}
+	if b.Callout != nil {
+		out = append(out, b.Callout.RichText)
+	}
+	if b.Toggle != nil {
+		out = append(out, b.Toggle.RichText)
+	}
+	if b.TableRow != nil {
+		out = append(out, b.TableRow.Cells...)
+	}
+	if b.Image != nil {
+		out = append(out, b.Image.Caption)
+	}
+	if b.Bookmark != nil {
+		out = append(out, b.Bookmark.Caption)
+	}
+	return out
 }
 
 // ShouldPreserveTree reports whether a top-level block must be left in place,

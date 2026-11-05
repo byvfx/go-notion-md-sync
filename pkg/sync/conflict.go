@@ -199,8 +199,8 @@ func printInsertedLines(text string) {
 }
 
 // HasConflict checks if there's a conflict between local and remote content.
-// Differences in line endings, trailing whitespace and surrounding blank
-// lines are ignored.
+// Only line endings and blank lines before or after the content are ignored:
+// trailing spaces (hard line breaks, code) and indentation are significant.
 func HasConflict(localContent, remoteContent string) bool {
 	return normalizeContent(localContent) != normalizeContent(remoteContent)
 }
@@ -208,8 +208,13 @@ func HasConflict(localContent, remoteContent string) bool {
 func normalizeContent(s string) string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	lines := strings.Split(s, "\n")
-	for i, l := range lines {
-		lines[i] = strings.TrimRight(l, " \t")
+	isBlank := func(l string) bool { return strings.TrimSpace(l) == "" }
+	start, end := 0, len(lines)
+	for start < end && isBlank(lines[start]) {
+		start++
 	}
-	return strings.TrimSpace(strings.Join(lines, "\n"))
+	for end > start && isBlank(lines[end-1]) {
+		end--
+	}
+	return strings.Join(lines[start:end], "\n")
 }

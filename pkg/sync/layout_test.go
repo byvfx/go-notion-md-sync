@@ -411,3 +411,61 @@ func TestBidirectional_ChangeDetection(t *testing.T) {
 		assert.Equal(t, "local edit", blocks[0].Paragraph.RichText[0].PlainText)
 	})
 }
+
+func TestPull_NewPageNeverTakesAnotherPagesFile(t *testing.T) {
+	mem, e, root := workspace(t)
+	ctx := context.Background()
+	require.NoError(t, e.SyncAll(ctx, "pull"))
+
+	// "Other" is renamed in Notion to "Renamed"; its file stays at Other/.
+	// A new page called "Other" then appears.
+	rootID := e.config.Notion.ParentPageID
+	otherID := mem.childrenOf(rootID)[1]
+	_, _ = mem.UpdatePageProperties(ctx, otherID, titleProperties("Renamed"))
+	newID := mem.addPage(rootID, "Other", paraBlock("brand new"))
+
+	require.NoError(t, e.SyncAll(ctx, "pull"))
+	original := readFile(t, filepath.Join(root, "Root", "Other", "Other.md"))
+	assert.Contains(t, original, "notion_id: "+otherID, "the existing file keeps its page")
+	assert.Contains(t, original, "other text")
+
+	var newFile string
+	for _, f := range listMarkdown(t, root) {
+		if strings.Contains(readFile(t, filepath.Join(root, f)), "notion_id: "+newID) {
+			newFile = f
+		}
+	}
+	require.NotEmpty(t, newFile, "the new page needs its own file")
+	assert.NotEqual(t, "Root/Other/Other.md", newFile)
+}
+
+func TestPull_SkipsExcludedDestinations(t *testing.T) {
+	mem, e, root := workspace(t)
+	mem.addPage(e.config.Notion.ParentPageID, "Drafts", paraBlock("draft"))
+	e.config.Directories.ExcludedPatterns = []string{"Root/Drafts/**"}
+	require.NoError(t, e.SyncAll(context.Background(), "pull"))
+	assert.NoFileExists(t, filepath.Join(root, "Root", "Drafts", "Drafts.md"))
+	assert.FileExists(t, filepath.Join(root, "Root", "Other", "Other.md"))
+
+	require.NoError(t, e.SyncAll(context.Background(), "bidirectional"))
+	assert.NoFileExists(t, filepath.Join(root, "Root", "Drafts", "Drafts.md"))
+}
+
+func TestRewritingFrontmatterDoesNotAddBlankLines(t *testing.T) {
+	_, e, root := workspace(t)
+	ctx := context.Background()
+	require.NoError(t, e.SyncAll(ctx, "pull"))
+	path := filepath.Join(root, "Root", "Other", "Other.md")
+
+	// Each push rewrites the frontmatter (updated_at, synced_at).
+	for i, text := range []string{"edit one", "edit two", "edit three"} {
+		content := readFile(t, path)
+		prev := "other text"
+		if i > 0 {
+			prev = []string{"edit one", "edit two"}[i-1]
+		}
+		require.NoError(t, os.WriteFile(path, []byte(strings.Replace(content, prev, text, 1)), 0644))
+		require.NoError(t, e.SyncFileToNotion(ctx, path))
+	}
+	assert.Contains(t, readFile(t, path), "---\n\nedit three", "exactly one blank line after the frontmatter")
+}

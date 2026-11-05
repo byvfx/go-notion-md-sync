@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -85,15 +86,18 @@ func (e *engine) planPaths(pages []notion.Page, local map[string]string) *pagePl
 		for _, p := range group {
 			name := util.SanitizeFileName(e.extractTitleFromPage(p))
 			if used[strings.ToLower(name)] {
-				short := strings.ReplaceAll(p.ID, "-", "")
-				if len(short) > 8 {
-					short = short[:8]
-				}
-				name = name + " (" + short + ")"
+				name = name + " (" + shortPageID(p.ID) + ")"
 			}
 			used[strings.ToLower(name)] = true
 			folder[normalizeID(p.ID)] = name
 		}
+	}
+
+	// Paths already taken by local files (whichever page they belong to) and
+	// paths handed out so far. A new page never gets one of them.
+	taken := make(map[string]bool, len(local)+len(pages))
+	for _, p := range local {
+		taken[pathKey(p)] = true
 	}
 
 	var resolve func(id string, depth int) string
@@ -116,10 +120,25 @@ func (e *engine) planPaths(pages []notion.Page, local map[string]string) *pagePl
 				parentDir = filepath.Dir(resolve(parentID, depth+1))
 			}
 		}
-		path, err := util.SecureJoin(parentDir, name, name+".md")
-		if err != nil {
-			path = filepath.Join(root, "untitled", "untitled.md")
+		path := ""
+		for n := 0; ; n++ {
+			candidate := name
+			switch {
+			case n == 1:
+				candidate = name + " (" + shortPageID(id) + ")"
+			case n > 1:
+				candidate = fmt.Sprintf("%s (%s-%d)", name, shortPageID(id), n)
+			}
+			p, err := util.SecureJoin(parentDir, candidate, candidate+".md")
+			if err != nil {
+				p = filepath.Join(root, "untitled", "untitled.md")
+			}
+			if !taken[pathKey(p)] || n > 100 {
+				path = p
+				break
+			}
 		}
+		taken[pathKey(path)] = true
 		plan.paths[id] = path
 		return path
 	}
@@ -127,6 +146,19 @@ func (e *engine) planPaths(pages []notion.Page, local map[string]string) *pagePl
 		resolve(normalizeID(pages[i].ID), 0)
 	}
 	return plan
+}
+
+// pathKey compares paths case-insensitively, as macOS and Windows do.
+func pathKey(p string) string {
+	return strings.ToLower(filepath.Clean(p))
+}
+
+func shortPageID(id string) string {
+	short := strings.ReplaceAll(id, "-", "")
+	if len(short) > 8 {
+		short = short[:8]
+	}
+	return short
 }
 
 // walkMarkdown calls fn for every Markdown file under the markdown root,

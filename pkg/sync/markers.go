@@ -23,9 +23,15 @@ import (
 
 const notionIDPattern = `[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}`
 
+// A marker only counts at the end of a top-level line (indented at most three
+// spaces, so not inside indented code), optionally after the stand-in text
+// pull writes, in which backticks only appear escaped. Markers quoted in
+// inline code, escaped with a backslash or written mid-line are left as
+// ordinary text.
 var (
-	markerRe    = regexp.MustCompile(`<!--\s*notion:([a-z_]+)\s+(` + notionIDPattern + `)(\s+begin)?\s*-->`)
-	endMarkerRe = regexp.MustCompile(`<!--\s*notion:end\s+(` + notionIDPattern + `)\s*-->`)
+	markerPrefix = "(?:(?:[^`\\\\\n]|\\\\.)*[^\\s`\\\\]\\s+)?"
+	markerRe     = regexp.MustCompile(`^ {0,3}` + markerPrefix + `<!--\s*notion:([a-z0-9_]+)\s+(` + notionIDPattern + `)(\s+begin)?\s*-->\s*$`)
+	endMarkerRe  = regexp.MustCompile(`^ {0,3}<!--\s*notion:end\s+(` + notionIDPattern + `)\s*-->\s*$`)
 )
 
 const (

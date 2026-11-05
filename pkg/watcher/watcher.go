@@ -1,6 +1,7 @@
 package watcher
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -140,6 +141,9 @@ func (w *Watcher) handleEvent(ctx context.Context, event fsnotify.Event) {
 	if event.Has(fsnotify.Create) {
 		if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
 			w.addDirRecursive(event.Name)
+			// A folder moved in (or filled before its watch was added)
+			// produces no events for the files already in it.
+			w.queueExistingFiles(ctx, event.Name)
 			return
 		}
 	}
@@ -188,13 +192,14 @@ func (w *Watcher) syncFile(ctx context.Context, filePath string) {
 		return
 	}
 
-	hash, err := fileHash(filePath)
+	snapshot, err := os.ReadFile(filePath)
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
 			w.logf("❌ Failed to read %s: %v\n", filePath, err)
 		}
 		return
 	}
+	hash := contentHash(snapshot)
 
 	if w.lastSyncedHash(filePath) == hash {
 		// Content unchanged since our last sync (typically the engine
@@ -210,11 +215,57 @@ func (w *Watcher) syncFile(ctx context.Context, filePath string) {
 	}
 	w.logf("✅ Synced %s to Notion\n", filePath)
 
-	// Record the content as it is after the sync, including any frontmatter
-	// the engine wrote, so the resulting event is not treated as a change.
-	if newHash, err := fileHash(filePath); err == nil {
-		w.setLastSyncedHash(filePath, newHash)
+	// The engine may rewrite the file's frontmatter after a push. Record
+	// that version so the resulting event isn't treated as an edit, but only
+	// if the body is still what was uploaded: an edit saved while the push
+	// ran must stay pending and be synced by its own event.
+	after, err := os.ReadFile(filePath)
+	if err == nil && bytes.Equal(markdownBody(after), markdownBody(snapshot)) {
+		w.setLastSyncedHash(filePath, contentHash(after))
+	} else {
+		w.setLastSyncedHash(filePath, hash)
 	}
+}
+
+// queueExistingFiles schedules a sync for every eligible Markdown file under
+// dir. It is used for folders that appear while watching, not at startup.
+func (w *Watcher) queueExistingFiles(ctx context.Context, dir string) {
+	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if path != dir && w.skipDir(path, d.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".md") || w.isExcluded(path) {
+			return nil
+		}
+		p := path
+		w.debouncer.debounce(p, func() {
+			w.syncFile(ctx, p)
+		})
+		return nil
+	})
+}
+
+func contentHash(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+// markdownBody returns a file's content without its YAML frontmatter and
+// leading blank lines.
+func markdownBody(b []byte) []byte {
+	b = bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n"))
+	if bytes.HasPrefix(b, []byte("---\n")) {
+		if end := bytes.Index(b[4:], []byte("\n---\n")); end >= 0 {
+			b = b[4+end+5:]
+		}
+	}
+	return bytes.TrimLeft(b, "\n")
 }
 
 func (w *Watcher) lastSyncedHash(filePath string) string {
@@ -265,15 +316,6 @@ func (w *Watcher) skipDir(path, name string) bool {
 		return true
 	}
 	return w.isExcluded(path)
-}
-
-func fileHash(filePath string) (string, error) {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:]), nil
 }
 
 // debounce runs fn once no further call for key has been made within the

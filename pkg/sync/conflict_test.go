@@ -183,3 +183,24 @@ func TestDiffResolution_MockUserInput(t *testing.T) {
 	assert.NotNil(t, resolver)
 	assert.Equal(t, "diff", resolver.strategy)
 }
+
+func TestHasConflict_Normalization(t *testing.T) {
+	tests := []struct {
+		name           string
+		local, remote  string
+		expectConflict bool
+	}{
+		{"line endings", "a\r\nb", "a\nb", false},
+		{"surrounding blank lines", "\n\na\n\n", "a", false},
+		{"trailing spaces are a hard break", "line  \nnext", "line\nnext", true},
+		{"trailing spaces in code", "```\nx  \n```", "```\nx\n```", true},
+		{"leading indentation is code", "    code", "code", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := HasConflict(tt.local, tt.remote); got != tt.expectConflict {
+				t.Errorf("HasConflict() = %v, want %v", got, tt.expectConflict)
+			}
+		})
+	}
+}

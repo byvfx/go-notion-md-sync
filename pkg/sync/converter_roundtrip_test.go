@@ -178,3 +178,47 @@ func TestConverter_CRLF(t *testing.T) {
 	require.Len(t, blocks, 2)
 	assert.Equal(t, "heading_1", blocks[0]["type"])
 }
+
+func TestConverter_KeepsBlocksWithUnsupportedContent(t *testing.T) {
+	headingID := "77777777-2222-3333-4444-555555555555"
+	mentionID := "88888888-2222-3333-4444-555555555555"
+	blocks := []notion.Block{
+		{ID: headingID, Type: "heading_2", Heading2: &notion.RichTextBlock{
+			RichText: []notion.RichText{{Type: "text", PlainText: "Toggle heading"}}, IsToggleable: true,
+		}, Children: []notion.Block{paraBlock("inside")}},
+		{ID: mentionID, Type: "paragraph", Paragraph: &notion.RichTextBlock{RichText: []notion.RichText{
+			{Type: "text", PlainText: "Ask "}, {Type: "mention", PlainText: "@Ada"},
+		}}},
+	}
+	md := toMarkdown(t, blocks)
+	// Shown read-only, with their text visible.
+	assert.Contains(t, md, regionBegin("heading_2", headingID)+"\n\n## Toggle heading\n\ninside\n\n"+regionEnd(headingID))
+	assert.Contains(t, md, regionBegin("paragraph", mentionID)+"\n\nAsk @Ada\n\n"+regionEnd(mentionID))
+
+	// On push both stay untouched (anchors only), nothing is uploaded again.
+	pushed := toBlocks(t, md)
+	require.Len(t, pushed, 2)
+	for _, b := range pushed {
+		assert.Equal(t, notion.AnchorBlockType, b["type"])
+	}
+}
+
+func TestConverter_MarkerLookalikesAreText(t *testing.T) {
+	id := "11111111-2222-3333-4444-555555555555"
+	for name, md := range map[string]string{
+		"inline code": "`" + markerComment("child_page", id) + "`",
+		"escaped":     `\` + markerComment("child_page", id),
+		"mid-line":    "see " + markerComment("child_page", id) + " here",
+		"code span":   "use `x` " + markerComment("child_page", id),
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, b := range toBlocks(t, md) {
+				assert.NotEqual(t, notion.AnchorBlockType, b["type"], "%q is not a marker", md)
+			}
+			assert.NotEmpty(t, toBlocks(t, md), "the text must not disappear")
+		})
+	}
+	// Generated stand-ins with escaped backticks still count.
+	line := "[📄 a\\`b](./a_b/a_b.md) " + markerComment("child_page", id)
+	assert.Equal(t, notion.AnchorBlockType, toBlocks(t, line)[0]["type"])
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark-meta"
@@ -121,7 +122,12 @@ func (p *markdownParser) CreateMarkdownWithFrontmatter(filePath string, metadata
 		buf.WriteString("---\n\n")
 	}
 
-	// Write content
+	// Write content. The frontmatter is already followed by a blank line;
+	// dropping the content's own leading newlines keeps repeated rewrites
+	// from adding a blank line each time.
+	if len(metadata) > 0 {
+		content = strings.TrimLeft(content, "\r\n")
+	}
 	buf.WriteString(content)
 
 	// Write file
