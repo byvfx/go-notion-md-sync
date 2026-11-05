@@ -356,8 +356,9 @@ notion-md-sync/
 ### Release Process
 1. **Bump the version** in `pkg/cli/root.go` (`Version:`) and write `docs/releases/vX.Y.Z.md`.
 2. **Merge to main** once CI is green.
-3. **Tag main and push the tag**:
+3. **Tag main and push the tag** (fetch first, so the tag includes the merge):
    ```bash
+   git fetch origin main
    git tag -a vX.Y.Z -m "vX.Y.Z" origin/main
    git push origin vX.Y.Z
    ```
