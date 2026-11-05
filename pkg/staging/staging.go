@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -58,9 +59,17 @@ type FileEntry struct {
 	Staged       bool      `json:"staged"`
 }
 
-// StagingArea manages the staging system
+// StagingArea manages the staging system.
+//
+// Index keys are paths relative to the staging root, cleaned and
+// slash-separated. Every public method accepts either such a relative path
+// or an absolute path inside the root and normalises it the same way.
+// A StagingArea is safe for concurrent use within one process.
 type StagingArea struct {
 	rootDir string
+
+	// mu serialises every load-modify-save cycle of the index.
+	mu sync.Mutex
 }
 
 // NewStagingArea creates a new staging area
@@ -72,6 +81,12 @@ func NewStagingArea(rootDir string) *StagingArea {
 
 // Initialize creates the staging directory structure
 func (s *StagingArea) Initialize() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.initializeLocked()
+}
+
+func (s *StagingArea) initializeLocked() error {
 	stagingPath := filepath.Join(s.rootDir, StagingDir)
 
 	// Create main staging directory
@@ -96,8 +111,60 @@ func (s *StagingArea) Initialize() error {
 	return nil
 }
 
-// GetStatus returns the status of all tracked files
+// NormalizePath returns the index key for filePath: relative to the staging
+// root (when filePath is absolute), cleaned and slash-separated.
+func (s *StagingArea) NormalizePath(filePath string) string {
+	if filepath.IsAbs(filePath) {
+		if rel, ok := s.relToRoot(filePath); ok {
+			filePath = rel
+		}
+	}
+	return filepath.ToSlash(filepath.Clean(filePath))
+}
+
+// relToRoot makes an absolute path relative to the staging root, resolving
+// symlinks when the plain comparison places it outside the root.
+func (s *StagingArea) relToRoot(absPath string) (string, bool) {
+	root, err := filepath.Abs(s.rootDir)
+	if err != nil {
+		return "", false
+	}
+
+	rel, err := filepath.Rel(root, absPath)
+	if err == nil && !isOutside(rel) {
+		return rel, true
+	}
+
+	realRoot, rootErr := filepath.EvalSymlinks(root)
+	realPath, pathErr := filepath.EvalSymlinks(absPath)
+	if rootErr == nil && pathErr == nil {
+		if r, err := filepath.Rel(realRoot, realPath); err == nil && !isOutside(r) {
+			return r, true
+		}
+	}
+
+	if err != nil {
+		return "", false
+	}
+	return rel, true
+}
+
+func isOutside(rel string) bool {
+	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// fullPath returns the on-disk path for an index key.
+func (s *StagingArea) fullPath(key string) string {
+	return filepath.Join(s.rootDir, filepath.FromSlash(key))
+}
+
+// GetStatus returns the status of every markdown file that is not
+// unmodified: staged, modified, new (untracked) or deleted. Keys are
+// normalised index paths.
 func (s *StagingArea) GetStatus() (map[string]FileStatus, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	index, err := s.loadIndex()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load index: %w", err)
@@ -108,8 +175,18 @@ func (s *StagingArea) GetStatus() (map[string]FileStatus, error) {
 		return nil, fmt.Errorf("failed to walk directory: %w", err)
 	}
 
-	status := s.processFiles(filesToCheck, index)
+	status, refreshed := s.processFiles(filesToCheck, index)
 	s.checkDeletedFiles(status, index)
+
+	// Persist refreshed timestamps once, after all workers have finished.
+	// This only refreshes cached metadata, so a failure (e.g. a read-only
+	// checkout) must not prevent reporting the status.
+	if len(refreshed) > 0 {
+		for key, entry := range refreshed {
+			index[key] = entry
+		}
+		_ = s.saveIndex(index)
+	}
 
 	return status, nil
 }
@@ -125,6 +202,10 @@ func (s *StagingArea) collectMarkdownFiles() ([]fileInfo, error) {
 	err := filepath.Walk(s.rootDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
+		}
+
+		if info.IsDir() && s.isInStagingDir(path) {
+			return filepath.SkipDir
 		}
 
 		if s.shouldSkipFile(path, info) {
@@ -153,28 +234,53 @@ func (s *StagingArea) shouldSkipFile(path string, info os.FileInfo) bool {
 	return s.isInStagingDir(path)
 }
 
-func (s *StagingArea) processFiles(filesToCheck []fileInfo, index map[string]FileEntry) map[string]FileStatus {
+// processFiles computes the status of each file concurrently. The index is
+// only read by the workers; entries whose timestamps should be refreshed
+// are returned for the caller to persist.
+func (s *StagingArea) processFiles(filesToCheck []fileInfo, index map[string]FileEntry) (map[string]FileStatus, map[string]FileEntry) {
 	status := make(map[string]FileStatus)
-	statusMutex := sync.Mutex{}
+	refreshed := make(map[string]FileEntry)
+	var resultMu sync.Mutex
 
 	maxWorkers := getMaxWorkers(len(filesToCheck))
 	jobs := make(chan fileInfo, len(filesToCheck))
 	var wg sync.WaitGroup
 
-	// Start workers
 	for i := 0; i < maxWorkers; i++ {
 		wg.Add(1)
-		go s.statusWorker(&wg, jobs, index, status, &statusMutex)
+		go func() {
+			defer wg.Done()
+			for job := range jobs {
+				relPath, err := filepath.Rel(s.rootDir, job.path)
+				if err != nil {
+					continue
+				}
+				key := filepath.ToSlash(filepath.Clean(relPath))
+
+				result, err := s.getFileStatus(key, job.info, index)
+				if err != nil {
+					continue
+				}
+
+				resultMu.Lock()
+				if result.status != StatusUnmodified {
+					status[key] = result.status
+				}
+				if result.refreshed != nil {
+					refreshed[key] = *result.refreshed
+				}
+				resultMu.Unlock()
+			}
+		}()
 	}
 
-	// Send jobs
 	for _, file := range filesToCheck {
 		jobs <- file
 	}
 	close(jobs)
 
 	wg.Wait()
-	return status
+	return status, refreshed
 }
 
 func getMaxWorkers(fileCount int) int {
@@ -185,45 +291,26 @@ func getMaxWorkers(fileCount int) int {
 	return defaultMaxWorkers
 }
 
-func (s *StagingArea) statusWorker(wg *sync.WaitGroup, jobs <-chan fileInfo, index map[string]FileEntry, status map[string]FileStatus, statusMutex *sync.Mutex) {
-	defer wg.Done()
-
-	for job := range jobs {
-		relPath, err := filepath.Rel(s.rootDir, job.path)
-		if err != nil {
-			continue
-		}
-
-		fileStatus, err := s.getFileStatus(relPath, job.info, index)
-		if err != nil {
-			continue
-		}
-
-		if fileStatus != StatusUnmodified {
-			statusMutex.Lock()
-			status[relPath] = fileStatus
-			statusMutex.Unlock()
-		}
-	}
-}
-
 func (s *StagingArea) checkDeletedFiles(status map[string]FileStatus, index map[string]FileEntry) {
-	for path, entry := range index {
-		fullPath := filepath.Join(s.rootDir, path)
-		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-			status[path] = StatusDeleted
+	for key, entry := range index {
+		if _, err := os.Stat(s.fullPath(key)); os.IsNotExist(err) {
+			status[key] = StatusDeleted
 		} else if entry.Staged {
 			// If file exists and is staged, mark as staged
-			if _, exists := status[path]; !exists {
-				status[path] = StatusStaged
+			if _, exists := status[key]; !exists {
+				status[key] = StatusStaged
 			}
 		}
 	}
 }
 
-// AddFile stages a file for sync
+// AddFile stages a file for sync. filePath may be relative to the staging
+// root or absolute.
 func (s *StagingArea) AddFile(filePath string) error {
-	if err := s.Initialize(); err != nil {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.initializeLocked(); err != nil {
 		return err
 	}
 
@@ -232,7 +319,8 @@ func (s *StagingArea) AddFile(filePath string) error {
 		return fmt.Errorf("failed to load index: %w", err)
 	}
 
-	fullPath := filepath.Join(s.rootDir, filePath)
+	key := s.NormalizePath(filePath)
+	fullPath := s.fullPath(key)
 	info, err := os.Stat(fullPath)
 	if err != nil {
 		return fmt.Errorf("file not found: %w", err)
@@ -244,69 +332,103 @@ func (s *StagingArea) AddFile(filePath string) error {
 	}
 
 	entry := FileEntry{
-		Path:         filePath,
+		Path:         key,
 		Hash:         hash,
 		LastModified: info.ModTime(),
 		Staged:       true,
 	}
 
 	// Update last synced time if this is an update to an existing entry
-	if existing, exists := index[filePath]; exists {
+	if existing, exists := index[key]; exists {
 		entry.LastSynced = existing.LastSynced
 	}
 
-	index[filePath] = entry
+	index[key] = entry
 
 	return s.saveIndex(index)
 }
 
 // ResetFile unstages a file
 func (s *StagingArea) ResetFile(filePath string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	index, err := s.loadIndex()
 	if err != nil {
 		return fmt.Errorf("failed to load index: %w", err)
 	}
 
-	if entry, exists := index[filePath]; exists {
+	key := s.NormalizePath(filePath)
+	if entry, exists := index[key]; exists {
 		entry.Staged = false
-		index[filePath] = entry
+		index[key] = entry
 		return s.saveIndex(index)
 	}
 
 	return nil
 }
 
-// GetStagedFiles returns all staged files
+// GetStagedFiles returns all staged files as normalised index paths, sorted.
 func (s *StagingArea) GetStagedFiles() ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	index, err := s.loadIndex()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load index: %w", err)
 	}
 
 	var staged []string
-	for path, entry := range index {
+	for key, entry := range index {
 		if entry.Staged {
-			staged = append(staged, path)
+			staged = append(staged, key)
 		}
 	}
+	sort.Strings(staged)
 
 	return staged, nil
 }
 
-// MarkSynced marks files as synced and unstages them
+// MarkSynced marks files as synced and unstages them. The stored hash and
+// modification time are refreshed from disk, because a push may rewrite the
+// file (e.g. adding notion_id to the frontmatter).
 func (s *StagingArea) MarkSynced(filePaths []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	index, err := s.loadIndex()
 	if err != nil {
 		return fmt.Errorf("failed to load index: %w", err)
 	}
 
 	now := time.Now()
-	for _, path := range filePaths {
-		if entry, exists := index[path]; exists {
-			entry.LastSynced = now
-			entry.Staged = false
-			index[path] = entry
+	for _, filePath := range filePaths {
+		key := s.NormalizePath(filePath)
+		entry, exists := index[key]
+		if !exists {
+			entry = FileEntry{Path: key}
 		}
+
+		fullPath := s.fullPath(key)
+		info, statErr := os.Stat(fullPath)
+		if statErr != nil {
+			if !exists {
+				// Nothing on disk and nothing tracked: nothing to record.
+				continue
+			}
+		} else {
+			hash, err := s.calculateFileHash(fullPath)
+			if err != nil {
+				return fmt.Errorf("failed to calculate hash for %s: %w", key, err)
+			}
+			entry.Hash = hash
+			entry.LastModified = info.ModTime()
+		}
+
+		entry.Path = key
+		entry.LastSynced = now
+		entry.Staged = false
+		index[key] = entry
 	}
 
 	return s.saveIndex(index)
@@ -314,81 +436,41 @@ func (s *StagingArea) MarkSynced(filePaths []string) error {
 
 // Helper methods
 
-func (s *StagingArea) getFileStatus(relPath string, info os.FileInfo, index map[string]FileEntry) (FileStatus, error) {
-	entry, exists := index[relPath]
+type statusResult struct {
+	status FileStatus
+	// refreshed is set when the entry's timestamp should be updated in the
+	// index (content unchanged but mtime moved).
+	refreshed *FileEntry
+}
 
+// getFileStatus determines the status of one file. It never mutates index.
+// Untracked files are always new; tracked files are compared by content
+// hash.
+func (s *StagingArea) getFileStatus(key string, info os.FileInfo, index map[string]FileEntry) (statusResult, error) {
+	entry, exists := index[key]
 	if !exists {
-		// File not in index - check if it's truly new or just not tracked yet
-		isActuallyNew, err := s.isFileActuallyNew(relPath, info)
-		if err != nil {
-			return StatusUnknown, err
-		}
-
-		if isActuallyNew {
-			return StatusNew, nil
-		} else {
-			// File exists but not tracked, treat as unmodified unless it has recent changes
-			return StatusUnmodified, nil
-		}
+		return statusResult{status: StatusNew}, nil
 	}
 
 	if entry.Staged {
-		return StatusStaged, nil
+		return statusResult{status: StatusStaged}, nil
 	}
 
-	// Quick timestamp check first
-	if !info.ModTime().After(entry.LastModified) {
-		return StatusUnmodified, nil
-	}
-
-	// File timestamp suggests change, verify with hash
-	fullPath := filepath.Join(s.rootDir, relPath)
-	currentHash, err := s.calculateFileHash(fullPath)
+	currentHash, err := s.calculateFileHash(s.fullPath(key))
 	if err != nil {
-		return StatusUnknown, fmt.Errorf("failed to calculate hash: %w", err)
+		return statusResult{status: StatusUnknown}, fmt.Errorf("failed to calculate hash: %w", err)
 	}
 
 	if currentHash != entry.Hash {
-		return StatusModified, nil
+		return statusResult{status: StatusModified}, nil
 	}
 
-	// Hash matches, update timestamp in index to avoid future hash calculations
-	entry.LastModified = info.ModTime()
-	index[relPath] = entry
-	_ = s.saveIndex(index) // Async update, ignore errors
-
-	return StatusUnmodified, nil
-}
-
-func (s *StagingArea) isFileActuallyNew(relPath string, info os.FileInfo) (bool, error) {
-	fullPath := filepath.Join(s.rootDir, relPath)
-
-	// Read the file to check for frontmatter indicating it's been synced before
-	content, err := os.ReadFile(fullPath)
-	if err != nil {
-		return false, err
+	if !info.ModTime().Equal(entry.LastModified) {
+		entry.LastModified = info.ModTime()
+		return statusResult{status: StatusUnmodified, refreshed: &entry}, nil
 	}
 
-	// Check if file has frontmatter with notion_id (indicating it's been synced before)
-	contentStr := string(content)
-	if strings.HasPrefix(contentStr, "---\n") {
-		// Look for notion_id in frontmatter
-		if strings.Contains(contentStr, "notion_id:") || strings.Contains(contentStr, "notion_page_id:") {
-			// File has been synced before, check if it's been modified recently
-			// Consider it modified if changed in last 24 hours, otherwise unmodified
-			if time.Since(info.ModTime()) < 24*time.Hour {
-				return true, nil // Treat as new/modified
-			}
-			return false, nil // Old file, treat as unmodified
-		}
-	}
-
-	// No frontmatter with notion_id, check if it's a recently created file
-	if time.Since(info.ModTime()) < 1*time.Hour {
-		return true, nil // Recently created file
-	}
-
-	return false, nil // Old file without notion_id, probably doesn't need syncing
+	return statusResult{status: StatusUnmodified}, nil
 }
 
 func (s *StagingArea) calculateFileHash(filePath string) (string, error) {
@@ -415,6 +497,8 @@ func (s *StagingArea) isInStagingDir(path string) bool {
 	return !filepath.IsAbs(rel) && !strings.HasPrefix(rel, "..")
 }
 
+// loadIndex reads the index, normalising keys written by older versions
+// (e.g. "./docs/a.md" and "docs/a.md") and merging any duplicates.
 func (s *StagingArea) loadIndex() (map[string]FileEntry, error) {
 	indexPath := filepath.Join(s.rootDir, StagingDir, IndexFile)
 
@@ -426,21 +510,78 @@ func (s *StagingArea) loadIndex() (map[string]FileEntry, error) {
 		return nil, err
 	}
 
-	var index map[string]FileEntry
-	if err := json.Unmarshal(data, &index); err != nil {
+	var raw map[string]FileEntry
+	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, err
+	}
+
+	index := make(map[string]FileEntry, len(raw))
+	for rawKey, entry := range raw {
+		key := s.NormalizePath(rawKey)
+		entry.Path = key
+		if existing, dup := index[key]; dup {
+			entry = mergeEntries(existing, entry)
+		}
+		index[key] = entry
 	}
 
 	return index, nil
 }
 
+// mergeEntries combines two index entries for the same file.
+func mergeEntries(a, b FileEntry) FileEntry {
+	merged := a
+	if b.LastModified.After(a.LastModified) {
+		merged.Hash = b.Hash
+		merged.LastModified = b.LastModified
+	}
+	if b.LastSynced.After(merged.LastSynced) {
+		merged.LastSynced = b.LastSynced
+	}
+	merged.Staged = a.Staged || b.Staged
+	return merged
+}
+
+// saveIndex writes the index atomically (temp file + rename) so readers
+// never observe a partially written file.
 func (s *StagingArea) saveIndex(index map[string]FileEntry) error {
-	indexPath := filepath.Join(s.rootDir, StagingDir, IndexFile)
+	dir := filepath.Join(s.rootDir, StagingDir)
+	indexPath := filepath.Join(dir, IndexFile)
 
 	data, err := json.MarshalIndent(index, "", "  ")
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(indexPath, data, 0644)
+	tmp, err := os.CreateTemp(dir, IndexFile+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary index: %w", err)
+	}
+	tmpName := tmp.Name()
+	cleanup := func() { _ = os.Remove(tmpName) }
+
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		cleanup()
+		return fmt.Errorf("failed to write temporary index: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		cleanup()
+		return fmt.Errorf("failed to flush temporary index: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		cleanup()
+		return fmt.Errorf("failed to close temporary index: %w", err)
+	}
+	if err := os.Chmod(tmpName, 0644); err != nil {
+		cleanup()
+		return fmt.Errorf("failed to set index permissions: %w", err)
+	}
+	if err := os.Rename(tmpName, indexPath); err != nil {
+		cleanup()
+		return fmt.Errorf("failed to replace index: %w", err)
+	}
+
+	return nil
 }
