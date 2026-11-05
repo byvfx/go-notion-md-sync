@@ -2,9 +2,13 @@ package concurrent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 )
+
+// ErrPoolShutdown is returned by Submit once the pool is shutting down.
+var ErrPoolShutdown = errors.New("worker pool is shutting down")
 
 // Job represents a unit of work to be processed
 type Job interface {
@@ -20,20 +24,46 @@ type Result struct {
 	Error error
 }
 
-// WorkerPool manages a pool of workers for concurrent job execution
+// WorkerPool manages a pool of workers for concurrent job execution.
+//
+// Results are buffered internally without limit, so workers never block on
+// a slow or absent reader: Shutdown always returns once the queued jobs are
+// done. Results not read before Shutdown remain readable from Results()
+// until it is closed; ShutdownNow discards them.
 type WorkerPool struct {
-	workers      int
-	jobQueue     chan Job
-	results      chan Result
-	wg           sync.WaitGroup
-	ctx          context.Context
-	cancel       context.CancelFunc
-	maxRetries   int
-	shutdownOnce sync.Once
+	workers    int
+	jobQueue   chan Job
+	results    chan Result
+	out        chan Result // workers -> dispatcher
+	wg         sync.WaitGroup
+	ctx        context.Context
+	cancel     context.CancelFunc
+	maxRetries int
+
+	// mu guards closed and every send on jobQueue, so Submit never sends
+	// on a closed channel.
+	mu      sync.RWMutex
+	closed  bool
+	closing chan struct{} // closed when shutdown begins
+	abort   chan struct{} // closed by ShutdownNow
+
+	startOnce      sync.Once
+	dispatcherOnce sync.Once
+	shutdownOnce   sync.Once
 }
 
 // NewWorkerPool creates a new worker pool with the specified number of workers
 func NewWorkerPool(workers int, queueSize int) *WorkerPool {
+	return NewWorkerPoolWithContext(context.Background(), workers, queueSize)
+}
+
+// NewWorkerPoolWithContext creates a worker pool whose jobs run with a
+// context derived from parent: cancelling parent cancels running jobs and
+// makes Submit fail.
+func NewWorkerPoolWithContext(parent context.Context, workers int, queueSize int) *WorkerPool {
+	if parent == nil {
+		parent = context.Background()
+	}
 	if workers <= 0 {
 		workers = 1
 	}
@@ -41,14 +71,17 @@ func NewWorkerPool(workers int, queueSize int) *WorkerPool {
 		queueSize = workers * 2
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(parent)
 	return &WorkerPool{
 		workers:    workers,
 		jobQueue:   make(chan Job, queueSize),
 		results:    make(chan Result, queueSize),
+		out:        make(chan Result),
 		ctx:        ctx,
 		cancel:     cancel,
 		maxRetries: 3,
+		closing:    make(chan struct{}),
+		abort:      make(chan struct{}),
 	}
 }
 
@@ -60,46 +93,89 @@ func (wp *WorkerPool) SetMaxRetries(retries int) {
 	wp.maxRetries = retries
 }
 
-// Start initiates the worker pool
+// Start initiates the worker pool. Calling it more than once, or after
+// shutdown, has no effect.
 func (wp *WorkerPool) Start() {
-	for i := 0; i < wp.workers; i++ {
-		wp.wg.Add(1)
-		go wp.worker(i)
+	wp.mu.RLock()
+	defer wp.mu.RUnlock()
+	if wp.closed {
+		return
 	}
+	wp.startOnce.Do(func() {
+		wp.startDispatcher()
+		for i := 0; i < wp.workers; i++ {
+			wp.wg.Add(1)
+			go wp.worker(i)
+		}
+	})
 }
 
-// Submit adds a job to the queue
+func (wp *WorkerPool) startDispatcher() {
+	wp.dispatcherOnce.Do(func() {
+		go wp.dispatch()
+	})
+}
+
+// Submit adds a job to the queue. It blocks while the queue is full and
+// returns ErrPoolShutdown (never panics) once shutdown has begun or the
+// pool's context is cancelled.
 func (wp *WorkerPool) Submit(job Job) error {
+	wp.mu.RLock()
+	defer wp.mu.RUnlock()
+
+	if wp.closed {
+		return ErrPoolShutdown
+	}
+
 	select {
 	case wp.jobQueue <- job:
 		return nil
+	case <-wp.closing:
+		return ErrPoolShutdown
 	case <-wp.ctx.Done():
-		return fmt.Errorf("worker pool is shutting down")
+		return fmt.Errorf("%w: %v", ErrPoolShutdown, wp.ctx.Err())
 	}
 }
 
-// Results returns the results channel for reading job outcomes
+// Results returns the results channel for reading job outcomes. It is
+// closed after shutdown once every buffered result has been delivered.
 func (wp *WorkerPool) Results() <-chan Result {
 	return wp.results
 }
 
-// Shutdown gracefully stops the worker pool
+// Shutdown gracefully stops the worker pool: queued jobs are completed and
+// Shutdown waits for them. It does not wait for results to be read.
 func (wp *WorkerPool) Shutdown() {
-	wp.shutdownOnce.Do(func() {
-		close(wp.jobQueue)
-		wp.wg.Wait()
-		wp.cancel()
-		close(wp.results)
-	})
+	wp.shutdown(false)
 }
 
-// ShutdownNow immediately stops the worker pool
+// ShutdownNow immediately stops the worker pool, cancelling running jobs,
+// dropping queued jobs and discarding unread results.
 func (wp *WorkerPool) ShutdownNow() {
+	wp.shutdown(true)
+}
+
+func (wp *WorkerPool) shutdown(now bool) {
 	wp.shutdownOnce.Do(func() {
-		wp.cancel()
+		// Wake any Submit blocked on a full queue so it releases mu.
+		close(wp.closing)
+		if now {
+			close(wp.abort)
+			wp.cancel()
+		}
+
+		wp.mu.Lock()
+		wp.closed = true
 		close(wp.jobQueue)
+		wp.mu.Unlock()
+
+		// Ensure Results() is eventually closed even if Start was never
+		// called.
+		wp.startDispatcher()
+
 		wp.wg.Wait()
-		close(wp.results)
+		wp.cancel()
+		close(wp.out)
 	})
 }
 
@@ -109,6 +185,12 @@ func (wp *WorkerPool) worker(_ int) {
 
 	for {
 		select {
+		case <-wp.abort:
+			return
+		default:
+		}
+
+		select {
 		case job, ok := <-wp.jobQueue:
 			if !ok {
 				return
@@ -117,14 +199,52 @@ func (wp *WorkerPool) worker(_ int) {
 			// Execute job with retry logic
 			err := wp.executeWithRetry(job)
 
-			// Send result
+			// Hand the result to the dispatcher, which never blocks for
+			// long because it buffers internally.
 			select {
-			case wp.results <- Result{JobID: job.ID(), Error: err}:
-			case <-wp.ctx.Done():
+			case wp.out <- Result{JobID: job.ID(), Error: err}:
+			case <-wp.abort:
 				return
 			}
 
-		case <-wp.ctx.Done():
+		case <-wp.abort:
+			return
+		}
+	}
+}
+
+// dispatch forwards results from workers to the public results channel,
+// buffering as needed, and closes it when the pool has shut down and every
+// result has been delivered (or immediately on ShutdownNow).
+func (wp *WorkerPool) dispatch() {
+	defer close(wp.results)
+
+	var pending []Result
+	in := wp.out
+	for in != nil || len(pending) > 0 {
+		var send chan<- Result
+		var next Result
+		if len(pending) > 0 {
+			send = wp.results
+			next = pending[0]
+		}
+
+		select {
+		case r, ok := <-in:
+			if !ok {
+				in = nil
+				continue
+			}
+			pending = append(pending, r)
+		case send <- next:
+			pending = pending[1:]
+		case <-wp.abort:
+			// Keep receiving so workers are never stuck, but deliver
+			// nothing more.
+			if in != nil {
+				for range in {
+				}
+			}
 			return
 		}
 	}
@@ -172,40 +292,76 @@ func NewBatchProcessor(workers int) *BatchProcessor {
 	}
 }
 
-// ProcessBatch processes a batch of jobs and waits for all to complete
+// ProcessBatch processes a batch of jobs and waits for all to complete.
+// Jobs run with a context derived from ctx. Results are read while jobs are
+// still being submitted, so any number of jobs can be processed.
 func (bp *BatchProcessor) ProcessBatch(ctx context.Context, jobs []Job) ([]Result, error) {
 	if len(jobs) == 0 {
 		return []Result{}, nil
 	}
-
-	// Create a fresh pool for this batch
-	pool := NewWorkerPool(bp.workers, bp.workers*2)
-	pool.Start()
-	defer pool.Shutdown()
-
-	// Submit all jobs
-	for _, job := range jobs {
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("batch processing cancelled: %w", ctx.Err())
-		default:
-			if err := pool.Submit(job); err != nil {
-				return nil, fmt.Errorf("failed to submit job %s: %w", job.ID(), err)
-			}
-		}
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("batch processing cancelled: %w", ctx.Err())
 	}
 
-	// Collect results
+	// Create a fresh pool for this batch
+	pool := NewWorkerPoolWithContext(ctx, bp.workers, bp.workers*2)
+	pool.Start()
+
+	type submitOutcome struct {
+		submitted int
+		err       error
+	}
+	submitDone := make(chan submitOutcome, 1)
+	go func() {
+		n := 0
+		for _, job := range jobs {
+			if err := pool.Submit(job); err != nil {
+				submitDone <- submitOutcome{submitted: n, err: fmt.Errorf("failed to submit job %s: %w", job.ID(), err)}
+				return
+			}
+			n++
+		}
+		submitDone <- submitOutcome{submitted: n}
+	}()
+
 	results := make([]Result, 0, len(jobs))
-	for i := 0; i < len(jobs); i++ {
+	expected := len(jobs)
+	var submitErr error
+	submitCh := submitDone
+
+	for len(results) < expected {
 		select {
-		case result := <-pool.Results():
+		case result, ok := <-pool.Results():
+			if !ok {
+				pool.Shutdown()
+				return results, fmt.Errorf("worker pool closed after %d of %d results", len(results), expected)
+			}
 			results = append(results, result)
+
+		case outcome := <-submitCh:
+			submitCh = nil
+			expected = outcome.submitted
+			submitErr = outcome.err
+
 		case <-ctx.Done():
 			pool.ShutdownNow()
 			return results, fmt.Errorf("batch processing cancelled: %w", ctx.Err())
 		}
 	}
 
+	if submitCh != nil {
+		// All results are in; the submitter has finished or will shortly.
+		outcome := <-submitCh
+		submitErr = outcome.err
+	}
+
+	pool.Shutdown()
+
+	if submitErr != nil {
+		if ctx.Err() != nil {
+			return results, fmt.Errorf("batch processing cancelled: %w", ctx.Err())
+		}
+		return results, submitErr
+	}
 	return results, nil
 }

@@ -3,6 +3,7 @@ package concurrent
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -140,12 +141,18 @@ func (bp *AdvancedBatchProcessor) ProcessBatch(ctx context.Context, operations [
 	return result, nil
 }
 
-// divideBatches divides operations into smaller batches
+// divideBatches divides operations into smaller batches. A non-positive
+// BatchSize falls back to the default instead of looping forever.
 func (bp *AdvancedBatchProcessor) divideBatches(operations []BatchOperation) [][]BatchOperation {
 	var batches [][]BatchOperation
 
-	for i := 0; i < len(operations); i += bp.config.BatchSize {
-		end := i + bp.config.BatchSize
+	batchSize := bp.config.BatchSize
+	if batchSize <= 0 {
+		batchSize = DefaultBatchConfig().BatchSize
+	}
+
+	for i := 0; i < len(operations); i += batchSize {
+		end := i + batchSize
 		if end > len(operations) {
 			end = len(operations)
 		}
@@ -161,8 +168,16 @@ func (bp *AdvancedBatchProcessor) processSingleBatch(ctx context.Context, operat
 		Metadata: make(map[string]interface{}),
 	}
 
-	// Create timeout context for this batch
-	batchCtx, cancel := context.WithTimeout(ctx, bp.config.Timeout)
+	// Create timeout context for this batch (no timeout if unset)
+	var (
+		batchCtx context.Context
+		cancel   context.CancelFunc
+	)
+	if bp.config.Timeout > 0 {
+		batchCtx, cancel = context.WithTimeout(ctx, bp.config.Timeout)
+	} else {
+		batchCtx, cancel = context.WithCancel(ctx)
+	}
 	defer cancel()
 
 	// Process operations with retry logic
@@ -263,6 +278,9 @@ type BulkSyncManager struct {
 
 // NewBulkSyncManager creates a new bulk sync manager
 func NewBulkSyncManager(client notion.Client, converter syncpkg.Converter, config *BatchConfig) *BulkSyncManager {
+	if config == nil {
+		config = DefaultBatchConfig()
+	}
 	processor := NewAdvancedBatchProcessor(config)
 
 	var notionCache cache.NotionCache
@@ -343,6 +361,9 @@ type BatchScheduler struct {
 
 // NewOptimizedBatch creates a new optimized batch processor
 func NewOptimizedBatch(config *BatchConfig) *OptimizedBatch {
+	if config == nil {
+		config = DefaultBatchConfig()
+	}
 	scheduler := &BatchScheduler{
 		queues:     make(map[string][]BatchOperation),
 		priorities: make(map[string]int),
@@ -371,32 +392,74 @@ func (ob *OptimizedBatch) ScheduleOperation(op BatchOperation) {
 	ob.scheduler.queues[op.Type] = append(ob.scheduler.queues[op.Type], op)
 }
 
-// ProcessScheduledBatches processes all scheduled operations
+// ProcessScheduledBatches processes all scheduled operations. Operation
+// types are taken in priority order (lowest value first, ties by name);
+// types without a configured priority are processed last, in name order.
 func (ob *OptimizedBatch) ProcessScheduledBatches(ctx context.Context) (*BatchResult, error) {
+	allOperations := ob.takeScheduled()
+
+	// Process the batch without holding the scheduler lock, so new
+	// operations can be scheduled meanwhile.
+	processor := NewAdvancedBatchProcessor(ob.config)
+	return processor.ProcessBatch(ctx, allOperations)
+}
+
+// takeScheduled removes and returns all scheduled operations in processing
+// order, annotating each with its priority.
+func (ob *OptimizedBatch) takeScheduled() []BatchOperation {
 	ob.scheduler.mu.Lock()
 	defer ob.scheduler.mu.Unlock()
 
-	// Sort operations by priority
+	types := make([]string, 0, len(ob.scheduler.queues))
+	maxPriority := 0
+	for opType := range ob.scheduler.queues {
+		types = append(types, opType)
+	}
+	for _, priority := range ob.scheduler.priorities {
+		if priority > maxPriority {
+			maxPriority = priority
+		}
+	}
+
+	priorityOf := func(opType string) (int, bool) {
+		p, ok := ob.scheduler.priorities[opType]
+		return p, ok
+	}
+
+	sort.Slice(types, func(i, j int) bool {
+		pi, iKnown := priorityOf(types[i])
+		pj, jKnown := priorityOf(types[j])
+		if iKnown != jKnown {
+			return iKnown // known priorities first
+		}
+		if iKnown && pi != pj {
+			return pi < pj
+		}
+		return types[i] < types[j]
+	})
+
 	var allOperations []BatchOperation
-	for opType, priority := range ob.scheduler.priorities {
-		if operations, exists := ob.scheduler.queues[opType]; exists {
-			// Add priority information to metadata
-			for _, op := range operations {
-				if op.Metadata == nil {
-					op.Metadata = make(map[string]interface{})
-				}
-				op.Metadata["priority"] = priority
-				allOperations = append(allOperations, op)
+	for _, opType := range types {
+		priority, known := priorityOf(opType)
+		if !known {
+			priority = maxPriority + 1
+		}
+		for _, op := range ob.scheduler.queues[opType] {
+			// Copy metadata so the caller's map is not modified.
+			metadata := make(map[string]interface{}, len(op.Metadata)+1)
+			for k, v := range op.Metadata {
+				metadata[k] = v
 			}
+			metadata["priority"] = priority
+			op.Metadata = metadata
+			allOperations = append(allOperations, op)
 		}
 	}
 
 	// Clear queues
 	ob.scheduler.queues = make(map[string][]BatchOperation)
 
-	// Process the batch
-	processor := NewAdvancedBatchProcessor(ob.config)
-	return processor.ProcessBatch(ctx, allOperations)
+	return allOperations
 }
 
 // GetQueueStats returns statistics about the current queues
