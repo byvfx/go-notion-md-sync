@@ -38,7 +38,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if _, err := os.Stat("config.yaml"); err == nil {
 		fmt.Printf("⚠️  Project already initialized!\n")
 		fmt.Printf("📄 Found existing config: %s\n", configPath)
-		
+
 		// Show existing .env file location if it exists
 		envPath := filepath.Join(currentDir, ".env")
 		if _, err := os.Stat(".env"); err == nil {
@@ -46,7 +46,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		} else {
 			fmt.Printf("💡 You can create credentials at: %s\n", envPath)
 		}
-		
+
 		fmt.Println("\n✅ Your project is ready to use!")
 		fmt.Println("📚 Next steps:")
 		fmt.Println("   • Run: notion-md-sync pull --verbose")
@@ -240,7 +240,7 @@ Happy syncing! 🚀
 
 	fmt.Println("\n🚀 Ready to sync!")
 	fmt.Println("   • Test connection: notion-md-sync pull --verbose")
-	fmt.Println("   • Push sample file: notion-md-sync push --verbose")  
+	fmt.Println("   • Push sample file: notion-md-sync push --verbose")
 	fmt.Println("   • Auto-sync changes: notion-md-sync watch")
 
 	fmt.Println("\n📚 Need help?")

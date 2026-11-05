@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -99,126 +98,28 @@ func TestFindMarkdownFiles_Errors(t *testing.T) {
 }
 
 func TestPerformDirectorySync(t *testing.T) {
-	tempDir := t.TempDir()
-
-	// Create test markdown files
-	testFiles := []string{
-		filepath.Join(tempDir, "file1.md"),
-		filepath.Join(tempDir, "file2.md"),
-	}
-
-	for _, file := range testFiles {
-		content := `---
-notion_id: test-id
----
-# Test File`
-		require.NoError(t, os.WriteFile(file, []byte(content), 0644))
-	}
-
-	tests := []struct {
-		name        string
-		direction   string
-		engineSetup func(*mockSyncEngine)
-		checkOutput func(t *testing.T, output string)
-		expectError bool
-	}{
-		{
-			name:      "successful push",
-			direction: "push",
-			engineSetup: func(m *mockSyncEngine) {
-				m.syncFileToNotionFunc = func(ctx context.Context, filePath string) error {
-					return nil
-				}
-			},
-			checkOutput: func(t *testing.T, output string) {
-				assert.Contains(t, output, "Found 2 markdown files")
-				assert.Contains(t, output, "✅ Pushed")
-				assert.Contains(t, output, "2 succeeded, 0 failed, 0 skipped")
-			},
-			expectError: false,
-		},
-		{
-			name:      "push with failures",
-			direction: "push",
-			engineSetup: func(m *mockSyncEngine) {
-				m.syncFileToNotionFunc = func(ctx context.Context, filePath string) error {
-					if strings.Contains(filePath, "file1") {
-						return errors.New("sync failed")
-					}
-					return nil
-				}
-			},
-			checkOutput: func(t *testing.T, output string) {
-				assert.Contains(t, output, "❌ Failed to push")
-				assert.Contains(t, output, "✅ Pushed")
-				assert.Contains(t, output, "1 succeeded, 1 failed, 0 skipped")
-			},
-			expectError: false,
-		},
-		{
-			name:      "pull with notion_id",
-			direction: "pull",
-			engineSetup: func(m *mockSyncEngine) {
-				// syncSingleFileHelper will be called instead
-			},
-			checkOutput: func(t *testing.T, output string) {
-				assert.Contains(t, output, "Found 2 markdown files")
-				// Files will be skipped because mock engine doesn't implement full flow
-			},
-			expectError: false,
-		},
-		{
-			name:      "bidirectional sync",
-			direction: "bidirectional",
-			engineSetup: func(m *mockSyncEngine) {
-				m.syncFileToNotionFunc = func(ctx context.Context, filePath string) error {
-					return nil
-				}
-			},
-			checkOutput: func(t *testing.T, output string) {
-				assert.Contains(t, output, "✅ Pushed")
-				assert.Contains(t, output, "2 succeeded, 0 failed, 0 skipped")
-			},
-			expectError: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Capture stdout
-			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
-			os.Stdout = w
-
-			// Create mock engine
-			engine := &mockSyncEngine{}
-			if tt.engineSetup != nil {
-				tt.engineSetup(engine)
-			}
-
-			// Run function
-			ctx := context.Background()
-			err := performDirectorySync(ctx, engine, tempDir, tt.direction)
-
-			// Restore stdout and read output
-			_ = w.Close()
-			os.Stdout = oldStdout
-
-			buf := make([]byte, 4096)
-			n, _ := r.Read(buf)
-			output := string(buf[:n])
-
-			if tt.expectError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-
-			if tt.checkOutput != nil {
-				tt.checkOutput(t, output)
-			}
+	for _, direction := range []string{"push", "pull", "bidirectional"} {
+		t.Run(direction, func(t *testing.T) {
+			var got string
+			engine := &mockSyncEngine{syncAllFunc: func(ctx context.Context, d string) error {
+				got = d
+				return nil
+			}}
+			require.NoError(t, performDirectorySync(context.Background(), engine, t.TempDir(), direction))
+			assert.Equal(t, direction, got, "the whole tree is synced with the engine's SyncAll")
 		})
 	}
+
+	t.Run("failures are returned", func(t *testing.T) {
+		engine := &mockSyncEngine{syncAllFunc: func(ctx context.Context, d string) error {
+			return errors.New("2 files failed to push")
+		}}
+		assert.Error(t, performDirectorySync(context.Background(), engine, t.TempDir(), "push"))
+	})
+
+	t.Run("invalid direction", func(t *testing.T) {
+		assert.Error(t, performDirectorySync(context.Background(), &mockSyncEngine{}, t.TempDir(), "sideways"))
+	})
 }
 
 func TestSyncSingleFileHelper(t *testing.T) {

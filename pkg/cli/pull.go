@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"context"
 	"fmt"
-	"time"
 
 	"github.com/byvfx/go-notion-md-sync/pkg/config"
 	"github.com/byvfx/go-notion-md-sync/pkg/sync"
@@ -43,7 +41,7 @@ func runPull(cmd *cobra.Command, args []string) error {
 		if pullOutput == "" {
 			return fmt.Errorf("--output flag is required when pulling a specific page")
 		}
-		if err := util.ValidateFilePath(pullOutput, false); err != nil {
+		if err := util.ValidateUserPath(pullOutput, "output path"); err != nil {
 			return fmt.Errorf("invalid output path: %w", err)
 		}
 	}
@@ -65,19 +63,12 @@ func runPull(cmd *cobra.Command, args []string) error {
 	printVerbose("Loaded configuration")
 	printVerbose("Direction: pull (Notion → markdown)")
 
-	// Create sync engine
-	engine := sync.NewEngine(cfg)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-
 	// Determine output directory
 	outputDir := pullDirectory
 	if outputDir == "" {
 		outputDir = cfg.Directories.MarkdownRoot
 	}
-
-	// Validate output directory
-	if err := util.ValidateDirectoryPath(outputDir, true); err != nil {
+	if err := util.ValidateUserPath(outputDir, "output directory"); err != nil {
 		return fmt.Errorf("invalid output directory: %w", err)
 	}
 
@@ -96,6 +87,16 @@ func runPull(cmd *cobra.Command, args []string) error {
 		}
 		return nil
 	}
+
+	// Pull into the chosen directory; create it on first use.
+	if err := util.EnsureDirectory(outputDir, "output directory"); err != nil {
+		return err
+	}
+	cfg.Directories.MarkdownRoot = outputDir
+
+	engine := sync.NewEngine(cfg)
+	ctx, cancel := commandContext()
+	defer cancel()
 
 	// Pull specific page or all pages
 	if pullPageID != "" {

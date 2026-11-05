@@ -2,6 +2,7 @@ package util
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -295,5 +296,43 @@ func TestSanitizeAndValidateFilename(t *testing.T) {
 				t.Errorf("SanitizeAndValidateFilename() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestValidateFilePath_DotsInNames(t *testing.T) {
+	if err := ValidateFilePath("notes..md", false); err != nil {
+		t.Errorf("a file name containing '..' is not traversal: %v", err)
+	}
+	if err := ValidateFilePath("a/../../b", false); err == nil {
+		t.Error("expected traversal error")
+	}
+}
+
+func TestValidateUserPath(t *testing.T) {
+	if err := ValidateUserPath("../notes", "directory"); err != nil {
+		t.Errorf("relative parent folders are allowed for user paths: %v", err)
+	}
+	if err := ValidateUserPath("", "directory"); err == nil {
+		t.Error("expected error for empty path")
+	}
+	if err := ValidateUserPath("a\x00b", "directory"); err == nil {
+		t.Error("expected error for NUL byte")
+	}
+}
+
+func TestEnsureDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "new", "docs")
+	if err := EnsureDirectory(dir, "directory"); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		t.Fatalf("directory was not created: %v", err)
+	}
+	file := filepath.Join(t.TempDir(), "f")
+	if err := os.WriteFile(file, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureDirectory(file, "directory"); err == nil {
+		t.Error("expected error for a file")
 	}
 }

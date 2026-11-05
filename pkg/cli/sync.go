@@ -3,7 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
-	"time"
+	"os"
 
 	"github.com/byvfx/go-notion-md-sync/pkg/config"
 	"github.com/byvfx/go-notion-md-sync/pkg/sync"
@@ -54,28 +54,34 @@ func runSync(cmd *cobra.Command, args []string) error {
 	util.Debug("Loaded configuration from: %s", configPath)
 	util.Info("Sync direction: %s", syncDirection)
 
-	// Create sync engine
-	engine := sync.NewEngine(cfg)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-
 	// Determine the working directory
 	workingDir := syncDirectory
 	if workingDir == "" {
 		workingDir = cfg.Directories.MarkdownRoot
 	}
-
-	// Validate working directory
-	if err := util.ValidateDirectoryPath(workingDir, true); err != nil {
+	if syncDirection == "push" && syncFile == "" {
+		if info, err := os.Stat(workingDir); err != nil || !info.IsDir() {
+			return fmt.Errorf("invalid working directory: %s is not a directory", workingDir)
+		}
+	} else if err := util.EnsureDirectory(workingDir, "directory"); err != nil {
 		return fmt.Errorf("invalid working directory: %w", err)
 	}
 
 	// Validate specific file if provided
 	if syncFile != "" {
-		if err := util.ValidateFilePath(syncFile, true); err != nil {
+		if err := util.ValidateUserPath(syncFile, "sync file"); err != nil {
+			return fmt.Errorf("invalid sync file: %w", err)
+		}
+		if _, err := os.Stat(syncFile); err != nil {
 			return fmt.Errorf("invalid sync file: %w", err)
 		}
 	}
+
+	// The engine works on the chosen directory.
+	cfg.Directories.MarkdownRoot = workingDir
+	engine := sync.NewEngine(cfg)
+	ctx, cancel := commandContext()
+	defer cancel()
 
 	if dryRun {
 		util.Progress("DRY RUN: No actual changes will be made")
