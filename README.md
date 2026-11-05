@@ -13,7 +13,7 @@ A command-line tool that syncs a folder of Markdown files with a tree of Notion 
 - **Nothing Notion-only is lost.** Sub-pages, databases and blocks Markdown can't express are never deleted. They appear in your file as `<!-- notion:TYPE ID -->` markers.
 - **Git-like staging** (`status`, `add`, `reset`), file watching, and a terminal UI.
 
-📖 **Full documentation is in the [wiki](https://github.com/byvfx/go-notion-md-sync/wiki).**
+**Full documentation is in the [wiki](https://github.com/byvfx/go-notion-md-sync/wiki).**
 
 ## Install
 
