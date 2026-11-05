@@ -2,9 +2,13 @@ package sync
 
 import (
 	"bufio"
+	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
+	gosync "sync"
+	"time"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
@@ -23,18 +27,37 @@ func NewConflictResolver(strategy string) *ConflictResolver {
 
 // ResolveConflict resolves a conflict between local and remote content
 func (cr *ConflictResolver) ResolveConflict(localContent, remoteContent, filePath string) (string, error) {
+	return cr.resolve(context.Background(), localContent, remoteContent, filePath)
+}
+
+func (cr *ConflictResolver) resolve(ctx context.Context, localContent, remoteContent, filePath string) (string, error) {
 	switch cr.strategy {
 	case "newer":
-		return cr.resolveByNewer(localContent, remoteContent, filePath)
+		return cr.resolveByDiffCtx(ctx, localContent, remoteContent, filePath)
 	case "notion_wins":
 		return remoteContent, nil
 	case "markdown_wins":
 		return localContent, nil
-	case "diff":
-		return cr.resolveByDiff(localContent, remoteContent, filePath)
 	default:
-		return cr.resolveByDiff(localContent, remoteContent, filePath)
+		return cr.resolveByDiffCtx(ctx, localContent, remoteContent, filePath)
 	}
+}
+
+// ResolveConflictAt resolves a conflict like ResolveConflict, but with the
+// time the local file and the Notion page were last changed. The "newer"
+// strategy uses them to pick the most recent version; when a time is
+// unknown it falls back to showing a diff.
+// The prompt shown by the diff strategy gives up when ctx is cancelled.
+func (cr *ConflictResolver) ResolveConflictAt(ctx context.Context, localContent, remoteContent, filePath string, localTime, remoteTime time.Time) (string, error) {
+	if cr.strategy == "newer" && !localTime.IsZero() && !remoteTime.IsZero() {
+		if localTime.After(remoteTime) {
+			fmt.Printf("Conflict in %s: local file is newer, keeping it\n", filePath)
+			return localContent, nil
+		}
+		fmt.Printf("Conflict in %s: Notion page is newer, keeping it\n", filePath)
+		return remoteContent, nil
+	}
+	return cr.resolve(ctx, localContent, remoteContent, filePath)
 }
 
 // resolveByNewer resolves conflict by choosing the newer version
@@ -50,6 +73,68 @@ func (cr *ConflictResolver) resolveByNewer(localContent, remoteContent, filePath
 
 // resolveByDiff shows a diff and lets the user choose
 func (cr *ConflictResolver) resolveByDiff(localContent, remoteContent, filePath string) (string, error) {
+	return cr.resolveByDiffCtx(context.Background(), localContent, remoteContent, filePath)
+}
+
+// lineReader reads lines from one input in a single background goroutine.
+// Lines that arrive after a prompt was cancelled stay queued for the next
+// prompt, and a cancelled prompt leaves no goroutine behind.
+type lineReader struct {
+	in    io.Reader
+	once  gosync.Once
+	lines chan lineResult
+}
+
+type lineResult struct {
+	line string
+	err  error
+}
+
+func newLineReader(in io.Reader) *lineReader {
+	return &lineReader{in: in, lines: make(chan lineResult, 16)}
+}
+
+func (l *lineReader) start() {
+	go func() {
+		r := bufio.NewReader(l.in)
+		for {
+			line, err := r.ReadString('\n')
+			if line != "" || err == nil {
+				l.lines <- lineResult{line: line}
+			}
+			if err != nil {
+				l.lines <- lineResult{err: err}
+				close(l.lines)
+				return
+			}
+		}
+	}()
+}
+
+// next returns the next line, or an error when the input ends or ctx does.
+func (l *lineReader) next(ctx context.Context) (string, error) {
+	l.once.Do(l.start)
+	select {
+	case r, ok := <-l.lines:
+		if !ok {
+			return "", io.EOF
+		}
+		return r.line, r.err
+	case <-ctx.Done():
+		fmt.Println()
+		return "", ctx.Err()
+	}
+}
+
+// prompts is where conflict answers are read from (stdin; tests replace it).
+var prompts = newLineReader(os.Stdin)
+
+// readAnswer reads one answer, giving up when ctx ends.
+func readAnswer(ctx context.Context) (string, error) {
+	return prompts.next(ctx)
+}
+
+func (cr *ConflictResolver) resolveByDiffCtx(ctx context.Context, localContent, remoteContent, filePath string) (string, error) {
 	// Check if content is actually different
 	if localContent == remoteContent {
 		return localContent, nil
@@ -70,8 +155,7 @@ func (cr *ConflictResolver) resolveByDiff(localContent, remoteContent, filePath 
 	fmt.Println("  [s] Skip this file")
 	fmt.Print("\nYour choice [l/r/s]: ")
 
-	reader := bufio.NewReader(os.Stdin)
-	choice, err := reader.ReadString('\n')
+	choice, err := readAnswer(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to read user input: %w", err)
 	}
@@ -181,7 +265,23 @@ func printInsertedLines(text string) {
 	}
 }
 
-// HasConflict checks if there's a conflict between local and remote content
+// HasConflict checks if there's a conflict between local and remote content.
+// Only line endings and blank lines before or after the content are ignored:
+// trailing spaces (hard line breaks, code) and indentation are significant.
 func HasConflict(localContent, remoteContent string) bool {
-	return localContent != remoteContent
+	return normalizeContent(localContent) != normalizeContent(remoteContent)
+}
+
+func normalizeContent(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	lines := strings.Split(s, "\n")
+	isBlank := func(l string) bool { return strings.TrimSpace(l) == "" }
+	start, end := 0, len(lines)
+	for start < end && isBlank(lines[start]) {
+		start++
+	}
+	for end > start && isBlank(lines[end-1]) {
+		end--
+	}
+	return strings.Join(lines[start:end], "\n")
 }

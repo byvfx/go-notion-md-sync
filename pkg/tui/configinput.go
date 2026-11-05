@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -109,10 +108,9 @@ func (m ConfigInputModel) Update(msg tea.Msg) (ConfigInputModel, tea.Cmd) {
 		return m, nil
 
 	case ConfigSavedMsg:
+		// The main model reloads the configuration and switches views.
 		m.complete = true
-		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-			return tea.Quit
-		})
+		return m, nil
 
 	case ConfigErrorMsg:
 		m.err = msg.Error
@@ -283,6 +281,16 @@ NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID=%s
 		// Write .env file
 		if err := os.WriteFile(".env", []byte(envContent), 0600); err != nil {
 			return ConfigErrorMsg{Error: fmt.Errorf("failed to write .env file: %w", err)}
+		}
+
+		// Loading .env never overrides variables that are already set, so
+		// update the process environment too; the config reload that
+		// follows then picks up the new values.
+		if err := os.Setenv("NOTION_MD_SYNC_NOTION_TOKEN", token); err != nil {
+			return ConfigErrorMsg{Error: fmt.Errorf("failed to set token: %w", err)}
+		}
+		if err := os.Setenv("NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID", pageID); err != nil {
+			return ConfigErrorMsg{Error: fmt.Errorf("failed to set parent page ID: %w", err)}
 		}
 
 		return ConfigSavedMsg{}

@@ -2,100 +2,104 @@ package notion
 
 import (
 	"context"
-	"crypto/tls"
 	"net"
 	"net/http"
+	"sync/atomic"
 	"time"
 )
 
+// newTunedTransport returns a copy of http.DefaultTransport (so proxy
+// settings from HTTPS_PROXY/HTTP_PROXY/NO_PROXY, default TLS and HTTP/2
+// behaviour are preserved) with tune applied on top.
+func newTunedTransport(tune func(t *http.Transport)) *http.Transport {
+	var transport *http.Transport
+	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
+		transport = dt.Clone()
+	} else {
+		transport = &http.Transport{
+			Proxy:             http.ProxyFromEnvironment,
+			ForceAttemptHTTP2: true,
+		}
+	}
+	if transport.Proxy == nil {
+		transport.Proxy = http.ProxyFromEnvironment
+	}
+	tune(transport)
+	return transport
+}
+
 // NewOptimizedClient creates a Notion client with optimized HTTP settings
 func NewOptimizedClient(token string) Client {
-	// Create an optimized HTTP transport
-	transport := &http.Transport{
+	transport := newTunedTransport(func(t *http.Transport) {
 		// Connection pooling settings
-		MaxIdleConns:        100,               // Increased from default 100
-		MaxIdleConnsPerHost: 50,                // Increased from default 2
-		MaxConnsPerHost:     100,               // Limit connections per host
-		IdleConnTimeout:     120 * time.Second, // Keep connections alive longer
+		t.MaxIdleConns = 100
+		t.MaxIdleConnsPerHost = 50 // default is 2
+		t.MaxConnsPerHost = 100
+		t.IdleConnTimeout = 120 * time.Second
 
 		// TCP connection settings
-		DialContext: (&net.Dialer{
-			Timeout:   10 * time.Second, // Connection timeout
-			KeepAlive: 60 * time.Second, // TCP keep-alive
-		}).DialContext,
+		t.DialContext = (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 60 * time.Second,
+		}).DialContext
 
-		// TLS settings
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: false, // Keep security
-		},
-
-		// HTTP/2 settings
-		ForceAttemptHTTP2:      true,
-		MaxResponseHeaderBytes: 4096,
+		t.ForceAttemptHTTP2 = true
+		t.MaxResponseHeaderBytes = 4096
 
 		// Timeouts
-		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 30 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
+		t.TLSHandshakeTimeout = 10 * time.Second
+		t.ResponseHeaderTimeout = 30 * time.Second
+		t.ExpectContinueTimeout = 1 * time.Second
 
 		// Disable compression for speed (API responses are usually small)
-		DisableCompression: true,
-	}
-
-	// Create optimized HTTP client
-	httpClient := &http.Client{
-		Transport: transport,
-		Timeout:   5 * time.Minute, // Increased overall timeout
-	}
+		t.DisableCompression = true
+	})
 
 	return &client{
-		baseURL:    "https://api.notion.com/v1",
-		token:      token,
-		httpClient: httpClient,
+		baseURL: "https://api.notion.com/v1",
+		token:   token,
+		httpClient: &http.Client{
+			Transport: transport,
+			Timeout:   5 * time.Minute,
+		},
 	}
 }
 
 // NewBurstClient creates a client optimized for burst requests
 func NewBurstClient(token string) Client {
-	// Even more aggressive settings for burst workloads
-	transport := &http.Transport{
-		MaxIdleConns:        200,               // Double the connections
-		MaxIdleConnsPerHost: 100,               // Much higher per host
-		MaxConnsPerHost:     200,               // Allow more concurrent connections
-		IdleConnTimeout:     300 * time.Second, // Keep alive even longer
+	transport := newTunedTransport(func(t *http.Transport) {
+		t.MaxIdleConns = 200
+		t.MaxIdleConnsPerHost = 100
+		t.MaxConnsPerHost = 200
+		t.IdleConnTimeout = 300 * time.Second
 
-		DialContext: (&net.Dialer{
-			Timeout:   5 * time.Second,   // Faster connection timeout
-			KeepAlive: 120 * time.Second, // Longer keep-alive
-		}).DialContext,
+		t.DialContext = (&net.Dialer{
+			Timeout:   5 * time.Second,
+			KeepAlive: 120 * time.Second,
+		}).DialContext
 
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: false,
-		},
-
-		ForceAttemptHTTP2:     true,
-		TLSHandshakeTimeout:   5 * time.Second,  // Faster TLS
-		ResponseHeaderTimeout: 15 * time.Second, // Faster headers
-		ExpectContinueTimeout: 500 * time.Millisecond,
-		DisableCompression:    true,
-	}
-
-	httpClient := &http.Client{
-		Transport: transport,
-		Timeout:   10 * time.Minute, // Longer timeout for burst operations
-	}
+		t.ForceAttemptHTTP2 = true
+		t.TLSHandshakeTimeout = 5 * time.Second
+		t.ResponseHeaderTimeout = 15 * time.Second
+		t.ExpectContinueTimeout = 500 * time.Millisecond
+		t.DisableCompression = true
+	})
 
 	return &client{
-		baseURL:    "https://api.notion.com/v1",
-		token:      token,
-		httpClient: httpClient,
+		baseURL: "https://api.notion.com/v1",
+		token:   token,
+		httpClient: &http.Client{
+			Transport: transport,
+			Timeout:   10 * time.Minute, // Longer timeout for burst operations
+		},
 	}
 }
 
 // BatchClient creates multiple clients for true parallel processing
 type BatchClient struct {
 	clients []Client
-	current int
+	// next is the round-robin counter; it is shared by all workers.
+	next atomic.Uint64
 }
 
 // NewBatchClient creates multiple clients to work around connection limits
@@ -112,17 +116,14 @@ func NewBatchClient(token string, clientCount int) *BatchClient {
 		clients[i] = NewBurstClient(token)
 	}
 
-	return &BatchClient{
-		clients: clients,
-		current: 0,
-	}
+	return &BatchClient{clients: clients}
 }
 
-// GetClient returns the next client in round-robin fashion
+// GetClient returns the next client in round-robin fashion. It is safe for
+// concurrent use.
 func (bc *BatchClient) GetClient() Client {
-	client := bc.clients[bc.current]
-	bc.current = (bc.current + 1) % len(bc.clients)
-	return client
+	n := bc.next.Add(1) - 1
+	return bc.clients[n%uint64(len(bc.clients))]
 }
 
 // GetPage uses round-robin client selection

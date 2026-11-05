@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/byvfx/go-notion-md-sync/pkg/config"
 	"github.com/byvfx/go-notion-md-sync/pkg/staging"
@@ -43,7 +42,10 @@ func init() {
 func runPush(cmd *cobra.Command, args []string) error {
 	// Validate file argument if provided
 	if len(args) > 0 {
-		if err := util.ValidateFilePath(args[0], true); err != nil {
+		if err := util.ValidateUserPath(args[0], "file path"); err != nil {
+			return fmt.Errorf("invalid file path: %w", err)
+		}
+		if _, err := os.Stat(args[0]); err != nil {
 			return fmt.Errorf("invalid file path: %w", err)
 		}
 	}
@@ -54,8 +56,11 @@ func runPush(cmd *cobra.Command, args []string) error {
 	}
 
 	// Validate working directory
-	if err := util.ValidateDirectoryPath(workingDir, true); err != nil {
+	if err := util.ValidateUserPath(workingDir, "directory"); err != nil {
 		return fmt.Errorf("invalid working directory: %w", err)
+	}
+	if info, err := os.Stat(workingDir); err != nil || !info.IsDir() {
+		return fmt.Errorf("invalid working directory: %s is not a directory", workingDir)
 	}
 
 	cfg, err := config.Load(configPath)
@@ -140,10 +145,13 @@ func performDryRunPush(filesToPush []string) error {
 
 func performPush(cfg *config.Config, workingDir string, filesToPush []string, stagingArea *staging.StagingArea) error {
 	engine := sync.NewEngine(cfg)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := commandContext()
 	defer cancel()
 
 	results := pushFilesConcurrently(ctx, engine, workingDir, filesToPush)
+	// Folder pages created along the way are written by the engine but
+	// weren't in the list of files to push.
+	defer markWrittenFilesSynced(engine, stagingArea)
 
 	return processPushResults(results, stagingArea)
 }

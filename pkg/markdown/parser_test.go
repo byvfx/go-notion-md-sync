@@ -242,3 +242,21 @@ func TestParser_FrontmatterFields_ToMetadata(t *testing.T) {
 		t.Errorf("Expected tags [tag1, tag2], got %v", tags)
 	}
 }
+
+func TestParseFile_WindowsLineEndings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "crlf.md")
+	content := "---\r\ntitle: Win\r\nnotion_id: abc\r\n---\r\n\r\nBody text\r\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := NewParser().ParseFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Metadata["notion_id"] != "abc" {
+		t.Errorf("notion_id = %v, want abc", doc.Metadata["notion_id"])
+	}
+	if strings.Contains(doc.Content, "title:") || !strings.Contains(doc.Content, "Body text") {
+		t.Errorf("frontmatter not removed from content: %q", doc.Content)
+	}
+}

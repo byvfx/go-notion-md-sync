@@ -23,6 +23,14 @@ type mockNotionClient struct {
 	updatePageFunc            func(ctx context.Context, pageID string, blocks []map[string]interface{}) error
 	getChildPagesFunc         func(ctx context.Context, parentID string) ([]notion.Page, error)
 	getAllDescendantPagesFunc func(ctx context.Context, parentID string) ([]notion.Page, error)
+	updatePagePropertiesFunc  func(ctx context.Context, pageID string, properties map[string]interface{}) (*notion.Page, error)
+}
+
+func (m *mockNotionClient) UpdatePageProperties(ctx context.Context, pageID string, properties map[string]interface{}) (*notion.Page, error) {
+	if m.updatePagePropertiesFunc != nil {
+		return m.updatePagePropertiesFunc(ctx, pageID, properties)
+	}
+	return &notion.Page{ID: pageID}, nil
 }
 
 func (m *mockNotionClient) GetPage(ctx context.Context, pageID string) (*notion.Page, error) {
@@ -566,13 +574,14 @@ func TestEngine_IsExcluded(t *testing.T) {
 		{"test.tmp", true},
 		{"draft_notes.md", true},
 		{"archive/old.md", true},
-		{"archive/old/nested.md", false}, // filepath.Match doesn't support recursive patterns
+		{"archive/old/nested.md", true}, // everything inside an excluded folder
+		{"notes/test.tmp", true},        // patterns without a slash match at any depth
 		{"not_draft.md", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
-			result := e.isExcluded(tt.path)
+			result := e.isExcluded(filepath.Join(e.config.Directories.MarkdownRoot, tt.path))
 			assert.Equal(t, tt.excluded, result)
 		})
 	}
@@ -632,7 +641,7 @@ func TestEngine_ExtractTitleFromPage(t *testing.T) {
 					},
 				},
 			},
-			expected: "Untitled", // Function only looks for "title" property, not "Name"
+			expected: "Named Page", // database rows can name their title property anything
 		},
 		{
 			name: "page without title",
@@ -693,7 +702,7 @@ func TestEngine_CreateNotionPage(t *testing.T) {
 
 	// Execute
 	ctx := context.Background()
-	pageID, err := e.createNotionPage(ctx, "Test Title", blocks)
+	pageID, err := e.createNotionPage(ctx, e.config.Notion.ParentPageID, "Test Title", blocks)
 
 	// Verify
 	assert.NoError(t, err)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark-meta"
@@ -69,10 +70,17 @@ func (p *markdownParser) ParseFile(filePath string) (*Document, error) {
 	if len(metaData) > 0 {
 		// Remove frontmatter from raw content
 		lines := bytes.Split(content, []byte("\n"))
-		if len(lines) > 0 && bytes.Equal(lines[0], []byte("---")) {
+		// Accept Windows line endings and a UTF-8 byte order mark.
+		isFence := func(line []byte) bool {
+			return bytes.Equal(bytes.TrimRight(line, "\r \t"), []byte("---"))
+		}
+		if len(lines) > 0 {
+			lines[0] = bytes.TrimPrefix(lines[0], []byte("\xef\xbb\xbf"))
+		}
+		if len(lines) > 0 && isFence(lines[0]) {
 			// Find the closing ---
 			for i := 1; i < len(lines); i++ {
-				if bytes.Equal(lines[i], []byte("---")) {
+				if isFence(lines[i]) {
 					if i+1 < len(lines) {
 						rawContent = string(bytes.Join(lines[i+1:], []byte("\n")))
 					} else {
@@ -114,7 +122,12 @@ func (p *markdownParser) CreateMarkdownWithFrontmatter(filePath string, metadata
 		buf.WriteString("---\n\n")
 	}
 
-	// Write content
+	// Write content. The frontmatter is already followed by a blank line;
+	// dropping the content's own leading newlines keeps repeated rewrites
+	// from adding a blank line each time.
+	if len(metadata) > 0 {
+		content = strings.TrimLeft(content, "\r\n")
+	}
 	buf.WriteString(content)
 
 	// Write file

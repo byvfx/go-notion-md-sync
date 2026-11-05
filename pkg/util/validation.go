@@ -59,9 +59,12 @@ func ValidateFilePath(path string, mustExist bool) error {
 	// Clean the path to resolve . and .. elements
 	cleanPath := filepath.Clean(path)
 
-	// Check for path traversal attempts
-	if strings.Contains(cleanPath, "..") {
-		return fmt.Errorf("path contains directory traversal: %w", ErrInvalidPath)
+	// Check for path traversal attempts (a ".." path element; names like
+	// "notes..md" are fine)
+	for _, part := range strings.Split(filepath.ToSlash(cleanPath), "/") {
+		if part == ".." {
+			return fmt.Errorf("path contains directory traversal: %w", ErrInvalidPath)
+		}
 	}
 
 	// Check if path exists when required
@@ -73,6 +76,41 @@ func ValidateFilePath(path string, mustExist bool) error {
 		}
 	}
 
+	return nil
+}
+
+// ValidateUserPath checks a path the user gave on the command line or in the
+// config file. Unlike ValidateFilePath it allows ".." (pointing at a sibling
+// folder is a normal thing to do); it rejects empty paths and NUL bytes.
+func ValidateUserPath(path, field string) error {
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("%s is required: %w", field, ErrInvalidPath)
+	}
+	if strings.ContainsRune(path, 0) {
+		return fmt.Errorf("%s contains a NUL byte: %w", field, ErrInvalidPath)
+	}
+	return nil
+}
+
+// EnsureDirectory checks a user-supplied directory path and creates the
+// directory if it doesn't exist yet.
+func EnsureDirectory(path, field string) error {
+	if err := ValidateUserPath(path, field); err != nil {
+		return err
+	}
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		if err := os.MkdirAll(path, 0755); err != nil {
+			return fmt.Errorf("failed to create %s %s: %w", field, path, err)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("cannot access %s %s: %w", field, path, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s %s is not a directory", field, path)
+	}
 	return nil
 }
 

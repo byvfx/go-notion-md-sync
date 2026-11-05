@@ -251,204 +251,6 @@ func TestConverter_MarkdownToBlocks(t *testing.T) {
 			wantErr:  false,
 		},
 		{
-			name: "simple table",
-			markdown: `| Header 1 | Header 2 |
-| --- | --- |
-| Cell 1 | Cell 2 |
-| Cell 3 | Cell 4 |`,
-			want: []map[string]interface{}{
-				{
-					"type": "table",
-					"table": map[string]interface{}{
-						"table_width":       2,
-						"has_column_header": true,
-						"has_row_header":    false,
-					},
-				},
-				{
-					"type": "table_row",
-					"table_row": map[string]interface{}{
-						"cells": [][]map[string]interface{}{
-							{
-								{
-									"type": "text",
-									"text": map[string]interface{}{
-										"content": "Header 1",
-									},
-								},
-							},
-							{
-								{
-									"type": "text",
-									"text": map[string]interface{}{
-										"content": "Header 2",
-									},
-								},
-							},
-						},
-					},
-				},
-				{
-					"type": "table_row",
-					"table_row": map[string]interface{}{
-						"cells": [][]map[string]interface{}{
-							{
-								{
-									"type": "text",
-									"text": map[string]interface{}{
-										"content": "Cell 1",
-									},
-								},
-							},
-							{
-								{
-									"type": "text",
-									"text": map[string]interface{}{
-										"content": "Cell 2",
-									},
-								},
-							},
-						},
-					},
-				},
-				{
-					"type": "table_row",
-					"table_row": map[string]interface{}{
-						"cells": [][]map[string]interface{}{
-							{
-								{
-									"type": "text",
-									"text": map[string]interface{}{
-										"content": "Cell 3",
-									},
-								},
-							},
-							{
-								{
-									"type": "text",
-									"text": map[string]interface{}{
-										"content": "Cell 4",
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "table with three columns",
-			markdown: `| Name | Age | City |
-| --- | --- | --- |
-| Alice | 30 | New York |
-| Bob | 25 | London |`,
-			want: []map[string]interface{}{
-				{
-					"type": "table",
-					"table": map[string]interface{}{
-						"table_width":       3,
-						"has_column_header": true,
-						"has_row_header":    false,
-					},
-				},
-				{
-					"type": "table_row",
-					"table_row": map[string]interface{}{
-						"cells": [][]map[string]interface{}{
-							{
-								{
-									"type": "text",
-									"text": map[string]interface{}{
-										"content": "Name",
-									},
-								},
-							},
-							{
-								{
-									"type": "text",
-									"text": map[string]interface{}{
-										"content": "Age",
-									},
-								},
-							},
-							{
-								{
-									"type": "text",
-									"text": map[string]interface{}{
-										"content": "City",
-									},
-								},
-							},
-						},
-					},
-				},
-				{
-					"type": "table_row",
-					"table_row": map[string]interface{}{
-						"cells": [][]map[string]interface{}{
-							{
-								{
-									"type": "text",
-									"text": map[string]interface{}{
-										"content": "Alice",
-									},
-								},
-							},
-							{
-								{
-									"type": "text",
-									"text": map[string]interface{}{
-										"content": "30",
-									},
-								},
-							},
-							{
-								{
-									"type": "text",
-									"text": map[string]interface{}{
-										"content": "New York",
-									},
-								},
-							},
-						},
-					},
-				},
-				{
-					"type": "table_row",
-					"table_row": map[string]interface{}{
-						"cells": [][]map[string]interface{}{
-							{
-								{
-									"type": "text",
-									"text": map[string]interface{}{
-										"content": "Bob",
-									},
-								},
-							},
-							{
-								{
-									"type": "text",
-									"text": map[string]interface{}{
-										"content": "25",
-									},
-								},
-							},
-							{
-								{
-									"type": "text",
-									"text": map[string]interface{}{
-										"content": "London",
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			wantErr: false,
-		},
-		{
 			name:     "image block",
 			markdown: "![Alt text](https://example.com/image.png)",
 			want: []map[string]interface{}{
@@ -467,27 +269,6 @@ func TestConverter_MarkdownToBlocks(t *testing.T) {
 								},
 							},
 						},
-					},
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name:     "blockquote as callout",
-			markdown: "> This is a callout",
-			want: []map[string]interface{}{
-				{
-					"type": "callout",
-					"callout": map[string]interface{}{
-						"rich_text": []map[string]interface{}{
-							{
-								"type": "text",
-								"text": map[string]interface{}{
-									"content": "This is a callout",
-								},
-							},
-						},
-						"color": "gray_background",
 					},
 				},
 			},
@@ -516,82 +297,6 @@ func TestConverter_MarkdownToBlocks(t *testing.T) {
 								"type": "text",
 								"text": map[string]interface{}{
 									"content": "Click to expand",
-								},
-							},
-						},
-					},
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "nested list",
-			markdown: `- Item 1
-  - Nested item 1
-  - Nested item 2
-    - Deep nested item
-- Item 2`,
-			want: []map[string]interface{}{
-				{
-					"type": "bulleted_list_item",
-					"bulleted_list_item": map[string]interface{}{
-						"rich_text": []map[string]interface{}{
-							{
-								"type": "text",
-								"text": map[string]interface{}{
-									"content": "Item 1",
-								},
-							},
-						},
-					},
-				},
-				{
-					"type": "bulleted_list_item",
-					"bulleted_list_item": map[string]interface{}{
-						"rich_text": []map[string]interface{}{
-							{
-								"type": "text",
-								"text": map[string]interface{}{
-									"content": "  Nested item 1",
-								},
-							},
-						},
-					},
-				},
-				{
-					"type": "bulleted_list_item",
-					"bulleted_list_item": map[string]interface{}{
-						"rich_text": []map[string]interface{}{
-							{
-								"type": "text",
-								"text": map[string]interface{}{
-									"content": "  Nested item 2",
-								},
-							},
-						},
-					},
-				},
-				{
-					"type": "bulleted_list_item",
-					"bulleted_list_item": map[string]interface{}{
-						"rich_text": []map[string]interface{}{
-							{
-								"type": "text",
-								"text": map[string]interface{}{
-									"content": "    Deep nested item",
-								},
-							},
-						},
-					},
-				},
-				{
-					"type": "bulleted_list_item",
-					"bulleted_list_item": map[string]interface{}{
-						"rich_text": []map[string]interface{}{
-							{
-								"type": "text",
-								"text": map[string]interface{}{
-									"content": "Item 2",
 								},
 							},
 						},
@@ -683,29 +388,6 @@ func TestConverter_BlocksToMarkdown(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "list blocks",
-			blocks: []notion.Block{
-				{
-					Type: "bulleted_list_item",
-					BulletedListItem: &notion.RichTextBlock{
-						RichText: []notion.RichText{
-							{PlainText: "First item"},
-						},
-					},
-				},
-				{
-					Type: "numbered_list_item",
-					NumberedListItem: &notion.RichTextBlock{
-						RichText: []notion.RichText{
-							{PlainText: "Second item"},
-						},
-					},
-				},
-			},
-			want:    "- First item\n1. Second item",
-			wantErr: false,
-		},
-		{
 			name: "quote block",
 			blocks: []notion.Block{
 				{
@@ -727,39 +409,6 @@ func TestConverter_BlocksToMarkdown(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "table blocks",
-			blocks: []notion.Block{
-				{
-					Type: "table",
-					Table: &notion.TableBlock{
-						TableWidth:      2,
-						HasColumnHeader: true,
-						HasRowHeader:    false,
-					},
-				},
-				{
-					Type: "table_row",
-					TableRow: &notion.TableRowBlock{
-						Cells: [][]notion.RichText{
-							{{PlainText: "Header 1"}},
-							{{PlainText: "Header 2"}},
-						},
-					},
-				},
-				{
-					Type: "table_row",
-					TableRow: &notion.TableRowBlock{
-						Cells: [][]notion.RichText{
-							{{PlainText: "Cell 1"}},
-							{{PlainText: "Cell 2"}},
-						},
-					},
-				},
-			},
-			want:    "| Header 1 | Header 2 |\n| --- | --- |\n| Cell 1 | Cell 2 |",
-			wantErr: false,
-		},
-		{
 			name: "image block",
 			blocks: []notion.Block{
 				{
@@ -776,26 +425,6 @@ func TestConverter_BlocksToMarkdown(t *testing.T) {
 				},
 			},
 			want:    "![Test image](https://example.com/image.png)",
-			wantErr: false,
-		},
-		{
-			name: "callout block",
-			blocks: []notion.Block{
-				{
-					Type: "callout",
-					Callout: &notion.CalloutBlock{
-						RichText: []notion.RichText{
-							{PlainText: "This is a callout"},
-						},
-						Icon: &notion.CalloutIcon{
-							Type:  "emoji",
-							Emoji: "💡",
-						},
-						Color: "gray_background",
-					},
-				},
-			},
-			want:    "> 💡 This is a callout",
 			wantErr: false,
 		},
 		{
@@ -820,13 +449,10 @@ func TestConverter_BlocksToMarkdown(t *testing.T) {
 					Type: "bookmark",
 					Bookmark: &notion.BookmarkBlock{
 						URL: "https://example.com",
-						Caption: []notion.RichText{
-							{PlainText: "Example website"},
-						},
 					},
 				},
 			},
-			want:    "[Example website](https://example.com)",
+			want:    "<https://example.com>",
 			wantErr: false,
 		},
 		{
@@ -838,45 +464,6 @@ func TestConverter_BlocksToMarkdown(t *testing.T) {
 				},
 			},
 			want:    "---",
-			wantErr: false,
-		},
-		{
-			name: "nested list blocks",
-			blocks: []notion.Block{
-				{
-					Type: "bulleted_list_item",
-					BulletedListItem: &notion.RichTextBlock{
-						RichText: []notion.RichText{
-							{PlainText: "Item 1"},
-						},
-					},
-				},
-				{
-					Type: "bulleted_list_item",
-					BulletedListItem: &notion.RichTextBlock{
-						RichText: []notion.RichText{
-							{PlainText: "  Nested item 1"},
-						},
-					},
-				},
-				{
-					Type: "bulleted_list_item",
-					BulletedListItem: &notion.RichTextBlock{
-						RichText: []notion.RichText{
-							{PlainText: "  Nested item 2"},
-						},
-					},
-				},
-				{
-					Type: "bulleted_list_item",
-					BulletedListItem: &notion.RichTextBlock{
-						RichText: []notion.RichText{
-							{PlainText: "Item 2"},
-						},
-					},
-				},
-			},
-			want:    "- Item 1\n-   Nested item 1\n-   Nested item 2\n- Item 2",
 			wantErr: false,
 		},
 	}

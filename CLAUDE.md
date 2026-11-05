@@ -81,6 +81,22 @@ notion-md-sync/
 └── Makefile
 ```
 
+## v0.17.0 Data Safety & Directory Layout Release
+
+### Sync model (read this before changing pkg/sync or pkg/notion)
+- **One layout everywhere**: each page is `Folder/Folder.md`, sub-pages in sub-folders. `planPaths` (pkg/sync/layout.go) decides paths for pull and bidirectional sync; files are matched to pages by `notion_id`, so moved files stay where the user put them.
+- **New files on push** go under the page of their folder (`parentForFileLocked` / `folderPageLocked`); missing folder pages are created and saved as `Folder/Folder.md`. Creating pages is serialised with `engine.createMu`.
+- **Block trees**: `GetPageBlocks` returns top-level blocks with nested `Children`; it never descends into `child_page` / `child_database` (issue #7).
+- **Kept blocks**: `notion.ShouldPreserveTree` decides which top-level blocks a push must never delete (sub-pages, databases, Notion-hosted images, non round-trip types, and anything containing them). The converter writes them as `<!-- notion:TYPE ID -->` marker lines (or `begin`/`end` regions); on push those become `notion.AnchorBlock` placeholders that position new content. Keep `IsPreservedBlock` and the converter's rendering in sync.
+- **Block diff**: `UpdatePageBlocks` compares Notion's blocks with the converter's by fingerprint (pkg/notion/blockdiff.go: only what Markdown can express) and matches them with an LCS. Unchanged blocks are left alone; edited blocks of an updatable type are `PATCH`ed in place (pairing by position, or by word overlap when the gap sizes differ) and their children diffed recursively, so block IDs, comments and links survive. Only unmatched blocks are inserted (`position` after a block, or at the start) or deleted.
+- **Safe replace**: inserts happen first, then in-place updates, then deletes; a failure deletes the inserted blocks and writes the old content back into updated ones. Appends respect 100 children / 1000 blocks / 2 nesting levels per request.
+- **API version**: the client sends `Notion-Version: 2026-03-11`. Appends are positioned with `position: {type: after_block}` (not `after`), pages are trashed with `in_trash` (not `archived`), and databases are read and written through their first data source (`/data_sources/{id}`, `data_source_id` row parents); the `Client` methods still take database IDs and resolve them. `internal/notionfake` only accepts that version and rejects the old shapes.
+- **Round trips**: Markdown produced by pull must convert back unchanged (`TestConverter_RoundTripIsStable`). Add a case there for any converter change.
+- **Tests**: `pkg/notion/fake_server_test.go` is an in-memory Notion API; `pkg/sync/memnotion_test.go` is an in-memory `notion.Client` for engine scenarios (`layout_test.go`).
+
+### Not wired in
+- `pkg/cache` and `pkg/concurrent` are not imported by the binary (check with `go list -deps ./cmd/notion-md-sync`). The speedups listed for v0.11.0 below were measured in their benchmarks, not in the CLI.
+
 ## v0.16.0 Code Quality & Maintenance Release (Complete)
 
 ### Code Quality & Cleanup

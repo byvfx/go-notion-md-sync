@@ -551,3 +551,7 @@ func BenchmarkCachedNotionClient_GetPage(b *testing.B) {
 		_, _ = cachedClient.GetPage(ctx, "page-1")
 	}
 }
+
+func (m *mockNotionClient) UpdatePageProperties(ctx context.Context, pageID string, properties map[string]interface{}) (*notion.Page, error) {
+	return &notion.Page{ID: pageID}, nil
+}

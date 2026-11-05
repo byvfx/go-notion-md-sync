@@ -8,8 +8,44 @@ import (
 	"strings"
 
 	"github.com/byvfx/go-notion-md-sync/pkg/markdown"
+	"github.com/byvfx/go-notion-md-sync/pkg/staging"
 	"github.com/byvfx/go-notion-md-sync/pkg/sync"
 )
+
+// markWrittenFilesSynced records the files the engine wrote as in sync in
+// the staging index, so status doesn't list freshly pulled pages as new or
+// modified. With a nil stagingArea it uses the one in the current directory,
+// like status and add do. Files outside the staging root are ignored.
+func markWrittenFilesSynced(engine sync.Engine, stagingArea *staging.StagingArea) {
+	reporter, ok := engine.(sync.FileReporter)
+	if !ok {
+		return
+	}
+	files := reporter.WrittenFiles()
+	if len(files) == 0 {
+		return
+	}
+	if stagingArea == nil {
+		workingDir, err := os.Getwd()
+		if err != nil {
+			return
+		}
+		stagingArea = staging.NewStagingArea(workingDir)
+		if err := stagingArea.Initialize(); err != nil {
+			printVerbose("Warning: failed to initialize staging area: %v", err)
+			return
+		}
+	}
+	var inside []string
+	for _, f := range files {
+		if key := stagingArea.NormalizePath(f); key != ".." && !strings.HasPrefix(key, "../") {
+			inside = append(inside, f)
+		}
+	}
+	if err := stagingArea.MarkSynced(inside); err != nil {
+		printVerbose("Warning: failed to mark files as synced: %v", err)
+	}
+}
 
 // findMarkdownFiles recursively finds all markdown files in a directory
 func findMarkdownFiles(dir string) ([]string, error) {
@@ -31,66 +67,15 @@ func findMarkdownFiles(dir string) ([]string, error) {
 	return files, err
 }
 
-// performDirectorySync syncs all markdown files in a directory
+// performDirectorySync syncs the whole markdown root (the engine must have
+// been created with workingDir as its markdown root) in the given direction.
 func performDirectorySync(ctx context.Context, engine sync.Engine, workingDir, direction string) error {
-	// Find all markdown files in directory
-	files, err := findMarkdownFiles(workingDir)
-	if err != nil {
-		return fmt.Errorf("failed to find markdown files: %w", err)
+	switch direction {
+	case "push", "pull", "bidirectional":
+	default:
+		return fmt.Errorf("invalid direction: %s", direction)
 	}
-
-	if len(files) == 0 {
-		fmt.Printf("No markdown files found in %s\n", workingDir)
-		return nil
-	}
-
-	fmt.Printf("Found %d markdown files in %s\n", len(files), workingDir)
-
-	successCount := 0
-	failureCount := 0
-	skippedCount := 0
-
-	for _, file := range files {
-		printVerbose("Processing: %s", file)
-
-		switch direction {
-		case "push":
-			if err := engine.SyncFileToNotion(ctx, file); err != nil {
-				fmt.Printf("❌ Failed to push %s: %v\n", file, err)
-				failureCount++
-			} else {
-				fmt.Printf("✅ Pushed %s\n", file)
-				successCount++
-			}
-		case "pull":
-			if err := syncSingleFileHelper(ctx, engine, file, "pull"); err != nil {
-				if err.Error() == "no notion_id found in frontmatter - cannot pull without page ID" {
-					printVerbose("Skipped %s: No notion_id in frontmatter", file)
-					skippedCount++
-				} else {
-					fmt.Printf("❌ Failed to pull %s: %v\n", file, err)
-					failureCount++
-				}
-			} else {
-				fmt.Printf("✅ Pulled %s\n", file)
-				successCount++
-			}
-		case "bidirectional":
-			// Try push first, then pull if file has notion_id
-			if err := engine.SyncFileToNotion(ctx, file); err != nil {
-				fmt.Printf("❌ Failed to push %s: %v\n", file, err)
-				failureCount++
-			} else {
-				fmt.Printf("✅ Pushed %s\n", file)
-				successCount++
-			}
-		}
-	}
-
-	fmt.Printf("\n📊 Sync completed: %d succeeded, %d failed, %d skipped\n",
-		successCount, failureCount, skippedCount)
-
-	return nil
+	return engine.SyncAll(ctx, direction)
 }
 
 // syncSingleFileHelper handles syncing a single file (shared between commands)

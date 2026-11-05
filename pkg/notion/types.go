@@ -59,6 +59,10 @@ type Page struct {
 	Properties  map[string]interface{} `json:"properties"`
 	URL         string                 `json:"url"`
 	Parent      Parent                 `json:"parent"`
+	// LastEditedTime is when the page was last changed in Notion. Notion rounds
+	// it down to the minute.
+	LastEditedTime time.Time `json:"last_edited_time"`
+	InTrash        bool      `json:"in_trash,omitempty"`
 }
 
 type Parent struct {
@@ -91,13 +95,68 @@ type Block struct {
 	Divider          *DividerBlock       `json:"divider,omitempty"`
 	Equation         *EquationBlock      `json:"equation,omitempty"`
 	ChildDatabase    *ChildDatabaseBlock `json:"child_database,omitempty"`
+	ChildPage        *ChildPageBlock     `json:"child_page,omitempty"`
+	ToDo             *ToDoBlock          `json:"to_do,omitempty"`
+	LinkToPage       *LinkToPageBlock    `json:"link_to_page,omitempty"`
+	Embed            *MediaBlock         `json:"embed,omitempty"`
+	Video            *MediaBlock         `json:"video,omitempty"`
+	Audio            *MediaBlock         `json:"audio,omitempty"`
+	File             *MediaBlock         `json:"file,omitempty"`
+	PDF              *MediaBlock         `json:"pdf,omitempty"`
+	LinkPreview      *MediaBlock         `json:"link_preview,omitempty"`
 
-	// For unknown block types, keep the raw content
-	Content map[string]interface{} `json:",inline"`
+	// Children holds the nested blocks of this block. The API does not return
+	// them inline; GetPageBlocks fills this in. Children of child pages and
+	// child databases are never fetched, because they belong to another page.
+	Children []Block `json:"-"`
 }
 
 type RichTextBlock struct {
+	RichText     []RichText `json:"rich_text"`
+	IsToggleable bool       `json:"is_toggleable,omitempty"`
+	Color        string     `json:"color,omitempty"`
+}
+
+type ToDoBlock struct {
 	RichText []RichText `json:"rich_text"`
+	Checked  bool       `json:"checked"`
+	Color    string     `json:"color,omitempty"`
+}
+
+type ChildPageBlock struct {
+	Title string `json:"title"`
+}
+
+type LinkToPageBlock struct {
+	Type       string `json:"type"`
+	PageID     string `json:"page_id,omitempty"`
+	DatabaseID string `json:"database_id,omitempty"`
+}
+
+// MediaBlock covers embed, video, audio, file, pdf and link_preview blocks.
+type MediaBlock struct {
+	Type     string        `json:"type,omitempty"`
+	URL      string        `json:"url,omitempty"`
+	External *ExternalFile `json:"external,omitempty"`
+	File     *InternalFile `json:"file,omitempty"`
+	Caption  []RichText    `json:"caption,omitempty"`
+	Name     string        `json:"name,omitempty"`
+}
+
+// MediaURL returns the best URL for a media block, or "" if it has none.
+func (m *MediaBlock) MediaURL() string {
+	if m == nil {
+		return ""
+	}
+	switch {
+	case m.URL != "":
+		return m.URL
+	case m.External != nil:
+		return m.External.URL
+	case m.File != nil:
+		return m.File.URL
+	}
+	return ""
 }
 
 type CodeBlock struct {
@@ -110,6 +169,7 @@ type RichText struct {
 	Text        *TextContent `json:"text,omitempty"`
 	Annotations *Annotations `json:"annotations,omitempty"`
 	PlainText   string       `json:"plain_text"`
+	Href        string       `json:"href,omitempty"`
 }
 
 type TextContent struct {
@@ -137,8 +197,9 @@ type CreatePageRequest struct {
 }
 
 type SearchRequest struct {
-	Query  string `json:"query"`
-	Filter Filter `json:"filter,omitempty"`
+	Query       string  `json:"query"`
+	Filter      Filter  `json:"filter,omitempty"`
+	StartCursor *string `json:"start_cursor,omitempty"`
 }
 
 type Filter struct {
@@ -147,11 +208,15 @@ type Filter struct {
 }
 
 type SearchResponse struct {
-	Results []Page `json:"results"`
+	Results    []Page  `json:"results"`
+	HasMore    bool    `json:"has_more"`
+	NextCursor *string `json:"next_cursor"`
 }
 
 type BlocksResponse struct {
-	Results []Block `json:"results"`
+	Results    []Block `json:"results"`
+	HasMore    bool    `json:"has_more"`
+	NextCursor *string `json:"next_cursor"`
 }
 
 type TableBlock struct {
@@ -193,6 +258,7 @@ type CalloutIcon struct {
 
 type ToggleBlock struct {
 	RichText []RichText `json:"rich_text"`
+	Color    string     `json:"color,omitempty"`
 }
 
 type BookmarkBlock struct {
@@ -214,6 +280,10 @@ type ChildDatabaseBlock struct {
 }
 
 // Database types
+
+// Database is a Notion database. Since API version 2025-09-03 a database is
+// a container of data sources, which hold the schema and the rows; the
+// client fills Properties from the database's first data source.
 type Database struct {
 	ID          string              `json:"id"`
 	Object      string              `json:"object"`
@@ -223,6 +293,21 @@ type Database struct {
 	Properties  map[string]Property `json:"properties"`
 	Parent      Parent              `json:"parent"`
 	URL         string              `json:"url"`
+	DataSources []DataSourceRef     `json:"data_sources,omitempty"`
+}
+
+// DataSourceRef names one data source of a database.
+type DataSourceRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// DataSource holds a database's schema; rows are queried through it.
+type DataSource struct {
+	ID         string              `json:"id"`
+	Object     string              `json:"object"`
+	Title      []RichText          `json:"title"`
+	Properties map[string]Property `json:"properties"`
 }
 
 type Property struct {

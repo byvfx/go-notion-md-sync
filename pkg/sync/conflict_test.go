@@ -1,7 +1,10 @@
 package sync
 
 import (
+	"context"
+	"io"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -182,4 +185,53 @@ func TestDiffResolution_MockUserInput(t *testing.T) {
 
 	assert.NotNil(t, resolver)
 	assert.Equal(t, "diff", resolver.strategy)
+}
+
+func TestHasConflict_Normalization(t *testing.T) {
+	tests := []struct {
+		name           string
+		local, remote  string
+		expectConflict bool
+	}{
+		{"line endings", "a\r\nb", "a\nb", false},
+		{"surrounding blank lines", "\n\na\n\n", "a", false},
+		{"trailing spaces are a hard break", "line  \nnext", "line\nnext", true},
+		{"trailing spaces in code", "```\nx  \n```", "```\nx\n```", true},
+		{"leading indentation is code", "    code", "code", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := HasConflict(tt.local, tt.remote); got != tt.expectConflict {
+				t.Errorf("HasConflict() = %v, want %v", got, tt.expectConflict)
+			}
+		})
+	}
+}
+
+func TestResolveConflictAt_PromptStopsOnCancel(t *testing.T) {
+	r, w := io.Pipe()
+	defer func() { _ = w.Close() }()
+	old := prompts
+	prompts = newLineReader(r)
+	defer func() { prompts = old }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := NewConflictResolver("diff").ResolveConflictAt(ctx, "local", "remote", "f.md", time.Time{}, time.Time{})
+		done <- err
+	}()
+	cancel()
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(2 * time.Second):
+		t.Fatal("the conflict prompt ignored cancellation")
+	}
+
+	// An answer typed after the cancelled prompt goes to the next prompt.
+	go func() { _, _ = w.Write([]byte("r\n")) }()
+	got, err := NewConflictResolver("diff").ResolveConflictAt(context.Background(), "local", "remote", "f.md", time.Time{}, time.Time{})
+	assert.NoError(t, err)
+	assert.Equal(t, "remote", got, "the answer must not be lost to the cancelled prompt")
 }

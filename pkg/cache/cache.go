@@ -72,10 +72,11 @@ func NewMemoryCache(maxSize int, defaultTTL time.Duration) *MemoryCache {
 	}
 }
 
-// Get retrieves a value from the cache
+// Get retrieves a value from the cache. It takes the write lock because it
+// updates the hit/miss counters and removes expired entries.
 func (mc *MemoryCache) Get(key string) (interface{}, bool) {
-	mc.mu.RLock()
-	defer mc.mu.RUnlock()
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
 
 	entry, exists := mc.entries[key]
 	if !exists {
@@ -104,10 +105,14 @@ func (mc *MemoryCache) Set(key string, value interface{}, ttl time.Duration) {
 		ttl = mc.defaultTTL
 	}
 
-	// Check if we need to evict entries
-	if len(mc.entries) >= mc.maxSize {
-		// Simple eviction: remove oldest expired entry or first entry
-		mc.evictLRU()
+	// Evict only when adding a new key to a full cache; overwriting an
+	// existing key does not grow it. maxSize <= 0 means unbounded.
+	if _, exists := mc.entries[key]; !exists && mc.maxSize > 0 {
+		for len(mc.entries) >= mc.maxSize {
+			if !mc.evictLRU() {
+				break
+			}
+		}
 	}
 
 	mc.entries[key] = &CacheEntry{
@@ -140,23 +145,28 @@ func (mc *MemoryCache) Size() int {
 	return len(mc.entries)
 }
 
-// evictLRU removes the least recently used entry
-func (mc *MemoryCache) evictLRU() {
-	// Simple eviction strategy: remove first expired entry, or first entry
+// evictLRU removes one entry, preferring an expired one, otherwise the one
+// closest to expiry. It reports whether an entry was removed. The caller
+// must hold mc.mu.
+func (mc *MemoryCache) evictLRU() bool {
+	var victim string
+	var victimExpiry time.Time
+	found := false
 	for key, entry := range mc.entries {
 		if entry.IsExpired() {
-			delete(mc.entries, key)
-			mc.evictions++
-			return
+			victim, found = key, true
+			break
+		}
+		if !found || entry.ExpiresAt.Before(victimExpiry) {
+			victim, victimExpiry, found = key, entry.ExpiresAt, true
 		}
 	}
-
-	// No expired entries, remove first entry
-	for key := range mc.entries {
-		delete(mc.entries, key)
-		mc.evictions++
-		return
+	if !found {
+		return false
 	}
+	delete(mc.entries, victim)
+	mc.evictions++
+	return true
 }
 
 // NotionCacheImpl implements NotionCache using MemoryCache
@@ -175,8 +185,8 @@ func NewNotionCache(maxSize int, defaultTTL time.Duration) NotionCache {
 func (nc *NotionCacheImpl) GetPage(ctx context.Context, pageID string) (*notion.Page, bool) {
 	key := fmt.Sprintf("page:%s", pageID)
 	if value, exists := nc.cache.Get(key); exists {
-		if page, ok := value.(*notion.Page); ok {
-			return page, true
+		if page, ok := value.(*notion.Page); ok && page != nil {
+			return copyPage(page), true
 		}
 	}
 	return nil, false
@@ -184,8 +194,11 @@ func (nc *NotionCacheImpl) GetPage(ctx context.Context, pageID string) (*notion.
 
 // SetPage stores a page in the cache
 func (nc *NotionCacheImpl) SetPage(pageID string, page *notion.Page, ttl time.Duration) {
+	if page == nil {
+		return
+	}
 	key := fmt.Sprintf("page:%s", pageID)
-	nc.cache.Set(key, page, ttl)
+	nc.cache.Set(key, copyPage(page), ttl)
 }
 
 // GetPageBlocks retrieves page blocks from the cache
@@ -193,7 +206,7 @@ func (nc *NotionCacheImpl) GetPageBlocks(ctx context.Context, pageID string) ([]
 	key := fmt.Sprintf("blocks:%s", pageID)
 	if value, exists := nc.cache.Get(key); exists {
 		if blocks, ok := value.([]notion.Block); ok {
-			return blocks, true
+			return copyBlocks(blocks), true
 		}
 	}
 	return nil, false
@@ -202,15 +215,15 @@ func (nc *NotionCacheImpl) GetPageBlocks(ctx context.Context, pageID string) ([]
 // SetPageBlocks stores page blocks in the cache
 func (nc *NotionCacheImpl) SetPageBlocks(pageID string, blocks []notion.Block, ttl time.Duration) {
 	key := fmt.Sprintf("blocks:%s", pageID)
-	nc.cache.Set(key, blocks, ttl)
+	nc.cache.Set(key, copyBlocks(blocks), ttl)
 }
 
 // GetDatabase retrieves a database from the cache
 func (nc *NotionCacheImpl) GetDatabase(ctx context.Context, databaseID string) (*notion.Database, bool) {
 	key := fmt.Sprintf("database:%s", databaseID)
 	if value, exists := nc.cache.Get(key); exists {
-		if database, ok := value.(*notion.Database); ok {
-			return database, true
+		if database, ok := value.(*notion.Database); ok && database != nil {
+			return copyDatabase(database), true
 		}
 	}
 	return nil, false
@@ -218,8 +231,33 @@ func (nc *NotionCacheImpl) GetDatabase(ctx context.Context, databaseID string) (
 
 // SetDatabase stores a database in the cache
 func (nc *NotionCacheImpl) SetDatabase(databaseID string, database *notion.Database, ttl time.Duration) {
+	if database == nil {
+		return
+	}
 	key := fmt.Sprintf("database:%s", databaseID)
-	nc.cache.Set(key, database, ttl)
+	nc.cache.Set(key, copyDatabase(database), ttl)
+}
+
+// copyPage returns a shallow copy so callers cannot modify the cached
+// struct. Nested maps are still shared.
+func copyPage(page *notion.Page) *notion.Page {
+	cp := *page
+	return &cp
+}
+
+// copyDatabase returns a shallow copy of database.
+func copyDatabase(database *notion.Database) *notion.Database {
+	cp := *database
+	return &cp
+}
+
+// copyBlocks returns a copy of the slice so callers cannot modify the cached
+// one (appending to or reordering it, or replacing elements).
+func copyBlocks(blocks []notion.Block) []notion.Block {
+	if blocks == nil {
+		return nil
+	}
+	return append([]notion.Block(nil), blocks...)
 }
 
 // InvalidatePage removes a page and its blocks from the cache
@@ -255,6 +293,39 @@ func (nc *NotionCacheImpl) Stats() CacheStats {
 type CachedNotionClient struct {
 	client notion.Client
 	cache  NotionCache
+
+	// gen counts invalidations per page. A read only stores what it fetched
+	// if no invalidation happened while it was fetching, so a write that
+	// finishes during a slow read can't leave the old content cached.
+	genMu sync.Mutex
+	gen   map[string]uint64
+}
+
+func (c *CachedNotionClient) generation(id string) uint64 {
+	c.genMu.Lock()
+	defer c.genMu.Unlock()
+	return c.gen[id]
+}
+
+// invalidate drops a page from the cache and makes in-flight reads of it
+// discard their results.
+func (c *CachedNotionClient) invalidate(id string) {
+	c.genMu.Lock()
+	defer c.genMu.Unlock()
+	if c.gen == nil {
+		c.gen = make(map[string]uint64)
+	}
+	c.gen[id]++
+	c.cache.InvalidatePage(id)
+}
+
+// storeIfCurrent runs store only if the page wasn't invalidated since gen.
+func (c *CachedNotionClient) storeIfCurrent(id string, gen uint64, store func()) {
+	c.genMu.Lock()
+	defer c.genMu.Unlock()
+	if c.gen[id] == gen {
+		store()
+	}
 }
 
 // NewCachedNotionClient creates a new cached notion client
@@ -273,13 +344,14 @@ func (c *CachedNotionClient) GetPage(ctx context.Context, pageID string) (*notio
 	}
 
 	// Fetch from API
+	gen := c.generation(pageID)
 	page, err := c.client.GetPage(ctx, pageID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Cache the result
-	c.cache.SetPage(pageID, page, 0) // Use default TTL
+	c.storeIfCurrent(pageID, gen, func() { c.cache.SetPage(pageID, page, 0) })
 	return page, nil
 }
 
@@ -291,13 +363,14 @@ func (c *CachedNotionClient) GetPageBlocks(ctx context.Context, pageID string) (
 	}
 
 	// Fetch from API
+	gen := c.generation(pageID)
 	blocks, err := c.client.GetPageBlocks(ctx, pageID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Cache the result
-	c.cache.SetPageBlocks(pageID, blocks, 0) // Use default TTL
+	c.storeIfCurrent(pageID, gen, func() { c.cache.SetPageBlocks(pageID, blocks, 0) })
 	return blocks, nil
 }
 
@@ -321,24 +394,41 @@ func (c *CachedNotionClient) GetDatabase(ctx context.Context, databaseID string)
 
 // All other methods delegate to the underlying client
 
+// CreatePage creates a page and invalidates the parent, whose child blocks
+// now include the new page.
 func (c *CachedNotionClient) CreatePage(ctx context.Context, parentID string, properties map[string]interface{}) (*notion.Page, error) {
-	return c.client.CreatePage(ctx, parentID, properties)
+	page, err := c.client.CreatePage(ctx, parentID, properties)
+	c.invalidate(parentID)
+	return page, err
 }
 
+// UpdatePageBlocks replaces a page's blocks. The page is invalidated before
+// the write and again after it, so a read racing with the update cannot
+// leave stale blocks cached.
 func (c *CachedNotionClient) UpdatePageBlocks(ctx context.Context, pageID string, blocks []map[string]interface{}) error {
-	// Invalidate cache when updating
-	c.cache.InvalidatePage(pageID)
-	return c.client.UpdatePageBlocks(ctx, pageID, blocks)
+	c.invalidate(pageID)
+	err := c.client.UpdatePageBlocks(ctx, pageID, blocks)
+	c.invalidate(pageID)
+	return err
 }
 
+// DeletePage deletes a page and invalidates it.
 func (c *CachedNotionClient) DeletePage(ctx context.Context, pageID string) error {
-	// Invalidate cache when deleting
-	c.cache.InvalidatePage(pageID)
-	return c.client.DeletePage(ctx, pageID)
+	c.invalidate(pageID)
+	err := c.client.DeletePage(ctx, pageID)
+	c.invalidate(pageID)
+	return err
 }
 
+// RecreatePageWithBlocks creates a page with content and invalidates the
+// parent and the resulting page.
 func (c *CachedNotionClient) RecreatePageWithBlocks(ctx context.Context, parentID string, properties map[string]interface{}, blocks []map[string]interface{}) (*notion.Page, error) {
-	return c.client.RecreatePageWithBlocks(ctx, parentID, properties, blocks)
+	page, err := c.client.RecreatePageWithBlocks(ctx, parentID, properties, blocks)
+	c.invalidate(parentID)
+	if page != nil {
+		c.invalidate(page.ID)
+	}
+	return page, err
 }
 
 func (c *CachedNotionClient) SearchPages(ctx context.Context, query string) ([]notion.Page, error) {
@@ -365,16 +455,29 @@ func (c *CachedNotionClient) QueryDatabase(ctx context.Context, databaseID strin
 	return c.client.QueryDatabase(ctx, databaseID, request)
 }
 
+// CreateDatabase creates a database and invalidates the parent page, whose
+// child blocks now include it.
 func (c *CachedNotionClient) CreateDatabase(ctx context.Context, request *notion.CreateDatabaseRequest) (*notion.Database, error) {
-	return c.client.CreateDatabase(ctx, request)
+	database, err := c.client.CreateDatabase(ctx, request)
+	if request != nil && request.Parent.PageID != "" {
+		c.invalidate(request.Parent.PageID)
+	}
+	return database, err
 }
 
+// CreateDatabaseRow creates a row and invalidates the database.
 func (c *CachedNotionClient) CreateDatabaseRow(ctx context.Context, databaseID string, properties map[string]notion.PropertyValue) (*notion.DatabaseRow, error) {
-	return c.client.CreateDatabaseRow(ctx, databaseID, properties)
+	row, err := c.client.CreateDatabaseRow(ctx, databaseID, properties)
+	c.cache.InvalidateDatabase(databaseID)
+	return row, err
 }
 
+// UpdateDatabaseRow updates a row (a page) and invalidates it.
 func (c *CachedNotionClient) UpdateDatabaseRow(ctx context.Context, pageID string, properties map[string]notion.PropertyValue) (*notion.DatabaseRow, error) {
-	return c.client.UpdateDatabaseRow(ctx, pageID, properties)
+	c.invalidate(pageID)
+	row, err := c.client.UpdateDatabaseRow(ctx, pageID, properties)
+	c.invalidate(pageID)
+	return row, err
 }
 
 // CacheKey generates a cache key for the given parameters

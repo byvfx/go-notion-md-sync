@@ -99,25 +99,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// While the config form is open every key belongs to it (tokens can
+		// contain 'q', 'u', 'c', ...). Only ctrl+c and esc stay global.
+		if m.currentView == ConfigInputView {
+			switch msg.String() {
+			case "ctrl+c":
+				return m.quit()
+			case "esc":
+				m.currentView = UnifiedViewType
+				return m, nil
+			}
+			var cmd tea.Cmd
+			m.configInput, cmd = m.configInput.Update(msg)
+			return m, cmd
+		}
+
 		switch msg.String() {
 		case "ctrl+c", "q":
-			if m.executor != nil {
-				m.executor.Close()
-			}
-			return m, tea.Quit
+			return m.quit()
 
 		// View switching
 		case "u":
 			m.currentView = UnifiedViewType
+			return m, nil
 		case "c":
-			// Switch to config input view instead of configuration view
+			// Switch to config input view instead of configuration view.
+			// The key itself must not be typed into the form.
 			m.currentView = ConfigInputView
-
+			return m, m.configInput.Init()
 		}
 
 	case ConfigSavedMsg:
-		// Configuration saved successfully - switch back to unified view
+		// Configuration saved successfully: reload it and switch back to
+		// the unified view so the new credentials take effect immediately.
 		m.currentView = UnifiedViewType
+		m.configInput = NewConfigInputModel()
+		m.configInput.SetSize(m.width, m.height)
+		return m, m.reloadConfig()
 
 	case ConfigErrorMsg:
 		// Handle configuration error - stay in config input view
@@ -155,6 +173,51 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmds = append(cmds, cmd)
 
 	return m, tea.Batch(cmds...)
+}
+
+// quit releases resources and quits the program.
+func (m Model) quit() (tea.Model, tea.Cmd) {
+	if m.executor != nil {
+		m.executor.Close()
+	}
+	return m, tea.Quit
+}
+
+// reloadConfig loads the configuration again and recreates the executor and
+// unified view, so changes saved from the config form apply without a
+// restart.
+func (m *Model) reloadConfig() tea.Cmd {
+	appConfig, err := config.Load(m.configPath)
+	if err != nil {
+		m.initError = fmt.Errorf("failed to load config: %w", err)
+		m.unified.errorMessage = m.initError.Error()
+		m.unified.lastError = m.initError
+		return m.unified.clearErrorAfterDelay()
+	}
+
+	executor, err := NewCommandExecutor(appConfig)
+	if err != nil {
+		m.initError = fmt.Errorf("failed to create command executor: %w", err)
+		m.unified.errorMessage = m.initError.Error()
+		m.unified.lastError = m.initError
+		return m.unified.clearErrorAfterDelay()
+	}
+
+	if m.executor != nil {
+		m.executor.Close()
+	}
+	m.appConfig = appConfig
+	m.executor = executor
+	m.initError = nil
+
+	m.unified = NewUnifiedViewWithConfig(appConfig, executor)
+	if m.width > 0 && m.height > 0 {
+		if u, ok := m.unified.updateSize(m.width, m.height); ok {
+			m.unified = u
+		}
+	}
+
+	return m.unified.Init()
 }
 
 // View implements tea.Model

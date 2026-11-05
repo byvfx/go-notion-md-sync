@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/byvfx/go-notion-md-sync/pkg/util"
@@ -38,7 +39,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if _, err := os.Stat("config.yaml"); err == nil {
 		fmt.Printf("⚠️  Project already initialized!\n")
 		fmt.Printf("📄 Found existing config: %s\n", configPath)
-		
+
 		// Show existing .env file location if it exists
 		envPath := filepath.Join(currentDir, ".env")
 		if _, err := os.Stat(".env"); err == nil {
@@ -46,7 +47,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		} else {
 			fmt.Printf("💡 You can create credentials at: %s\n", envPath)
 		}
-		
+
 		fmt.Println("\n✅ Your project is ready to use!")
 		fmt.Println("📚 Next steps:")
 		fmt.Println("   • Run: notion-md-sync pull --verbose")
@@ -67,8 +68,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("   Get yours at: https://www.notion.so/my-integrations")
 		fmt.Println("   Create a new integration and copy the 'Internal Integration Token'")
 		fmt.Print("\n📋 Paste your token here (you can copy/paste): ")
-		token, _ = reader.ReadString('\n')
-		token = strings.TrimSpace(token)
+		line, err := readLine(reader)
+		if err != nil {
+			return err
+		}
+		token = line
 
 		if err := util.ValidateNotionToken(token); err != nil {
 			fmt.Printf("❌ Invalid token: %v\n", err)
@@ -87,8 +91,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("   2. Share the page with your integration")
 		fmt.Println("   3. Copy the page ID from the URL (long string after last '/')")
 		fmt.Print("\n📋 Paste your page ID here: ")
-		pageID, _ = reader.ReadString('\n')
-		pageID = strings.TrimSpace(pageID)
+		line, err := readLine(reader)
+		if err != nil {
+			return err
+		}
+		pageID = pageIDFromInput(line)
 
 		if err := util.ValidateNotionPageID(pageID); err != nil {
 			fmt.Printf("❌ Invalid page ID: %v\n", err)
@@ -105,13 +112,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("\n📂 Step 3: Markdown Directory")
 		fmt.Println("   Where should we store your markdown files?")
 		fmt.Print("   Directory path (default: ./docs): ")
-		markdownDir, _ = reader.ReadString('\n')
-		markdownDir = strings.TrimSpace(markdownDir)
+		line, err := readLine(reader)
+		if err != nil {
+			return err
+		}
+		markdownDir = line
 		if markdownDir == "" {
 			markdownDir = "./docs"
 		}
 
-		if err := util.ValidateDirectoryPath(markdownDir, false); err != nil {
+		if err := util.ValidateUserPath(markdownDir, "directory"); err != nil {
 			fmt.Printf("❌ Invalid directory path: %v\n", err)
 			continue
 		}
@@ -240,7 +250,7 @@ Happy syncing! 🚀
 
 	fmt.Println("\n🚀 Ready to sync!")
 	fmt.Println("   • Test connection: notion-md-sync pull --verbose")
-	fmt.Println("   • Push sample file: notion-md-sync push --verbose")  
+	fmt.Println("   • Push sample file: notion-md-sync push --verbose")
 	fmt.Println("   • Auto-sync changes: notion-md-sync watch")
 
 	fmt.Println("\n📚 Need help?")
@@ -248,4 +258,28 @@ Happy syncing! 🚀
 	fmt.Println("   • Documentation: https://github.com/byvfx/go-notion-md-sync")
 
 	return nil
+}
+
+// readLine reads one line of input. It fails when the input ends, so init
+// doesn't prompt forever when stdin is closed or not a terminal.
+func readLine(reader *bufio.Reader) (string, error) {
+	line, err := reader.ReadString('\n')
+	if err != nil && line == "" {
+		return "", fmt.Errorf("setup cancelled: no more input")
+	}
+	return strings.TrimSpace(line), nil
+}
+
+var pageIDInURL = regexp.MustCompile(`([0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:[?#].*)?$`)
+
+// pageIDFromInput accepts a page ID or a Notion page URL
+// (https://www.notion.so/Title-0123...) and returns the ID.
+func pageIDFromInput(input string) string {
+	input = strings.TrimSpace(input)
+	if strings.Contains(input, "/") {
+		if m := pageIDInURL.FindStringSubmatch(input); m != nil {
+			return m[1]
+		}
+	}
+	return input
 }

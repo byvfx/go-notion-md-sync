@@ -121,9 +121,9 @@ func (dej *DatabaseExportJob) ID() string {
 	return fmt.Sprintf("db-export-%s", dej.DatabaseID)
 }
 
-// SyncOrchestrator manages concurrent sync operations
+// SyncOrchestrator manages concurrent sync operations. Each SyncPages call
+// uses its own worker pool, so an orchestrator can be reused.
 type SyncOrchestrator struct {
-	pool      *WorkerPool
 	client    notion.Client
 	converter sync.Converter
 	config    *OrchestratorConfig
@@ -155,26 +155,23 @@ func NewSyncOrchestrator(client notion.Client, converter sync.Converter, config 
 		config = DefaultOrchestratorConfig()
 	}
 
-	pool := NewWorkerPool(config.Workers, config.QueueSize)
-	pool.SetMaxRetries(config.MaxRetries)
-
 	return &SyncOrchestrator{
-		pool:      pool,
 		client:    client,
 		converter: converter,
 		config:    config,
 	}
 }
 
-// SyncPages synchronizes multiple pages concurrently
+// SyncPages synchronizes multiple pages concurrently. It may be called any
+// number of times.
 func (so *SyncOrchestrator) SyncPages(ctx context.Context, pageIDs []string) ([]Result, error) {
 	if len(pageIDs) == 0 {
 		return []Result{}, nil
 	}
 
-	// Start the pool
-	so.pool.Start()
-	defer so.pool.Shutdown()
+	pool := NewWorkerPoolWithContext(ctx, so.config.Workers, so.config.QueueSize)
+	pool.SetMaxRetries(so.config.MaxRetries)
+	pool.Start()
 
 	// Create jobs
 	jobs := make([]Job, len(pageIDs))
@@ -187,10 +184,16 @@ func (so *SyncOrchestrator) SyncPages(ctx context.Context, pageIDs []string) ([]
 		}
 	}
 
-	// Process in batches
+	batchSize := so.config.BatchSize
+	if batchSize <= 0 {
+		batchSize = DefaultOrchestratorConfig().BatchSize
+	}
+
+	// Process in batches. Each batch fits in the pool's internal result
+	// buffer, so submitting a whole batch before reading cannot deadlock.
 	var allResults []Result
-	for i := 0; i < len(jobs); i += so.config.BatchSize {
-		end := i + so.config.BatchSize
+	for i := 0; i < len(jobs); i += batchSize {
+		end := i + batchSize
 		if end > len(jobs) {
 			end = len(jobs)
 		}
@@ -199,7 +202,11 @@ func (so *SyncOrchestrator) SyncPages(ctx context.Context, pageIDs []string) ([]
 
 		// Submit batch
 		for _, job := range batch {
-			if err := so.pool.Submit(job); err != nil {
+			if err := pool.Submit(job); err != nil {
+				pool.ShutdownNow()
+				if ctx.Err() != nil {
+					return allResults, fmt.Errorf("sync cancelled: %w", ctx.Err())
+				}
 				return allResults, fmt.Errorf("failed to submit job: %w", err)
 			}
 		}
@@ -207,14 +214,16 @@ func (so *SyncOrchestrator) SyncPages(ctx context.Context, pageIDs []string) ([]
 		// Collect batch results
 		for j := 0; j < len(batch); j++ {
 			select {
-			case result := <-so.pool.Results():
+			case result := <-pool.Results():
 				allResults = append(allResults, result)
 			case <-ctx.Done():
+				pool.ShutdownNow()
 				return allResults, fmt.Errorf("sync cancelled: %w", ctx.Err())
 			}
 		}
 	}
 
+	pool.Shutdown()
 	return allResults, nil
 }
 
