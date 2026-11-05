@@ -3,13 +3,48 @@ package notion
 import (
 	"context"
 	"fmt"
+	"sync"
 )
 
-// PageStream represents a stream of pages
+// streamErrors collects errors from a stream. The first error is kept for
+// Err(); every error is also offered on the Errors() channel without blocking.
+type streamErrors struct {
+	mu    sync.Mutex
+	first error
+	count int
+}
+
+func (se *streamErrors) record(ch chan error, err error) {
+	se.mu.Lock()
+	if se.first == nil {
+		se.first = err
+	}
+	se.count++
+	se.mu.Unlock()
+	select {
+	case ch <- err:
+	default:
+	}
+}
+
+func (se *streamErrors) err() error {
+	se.mu.Lock()
+	defer se.mu.Unlock()
+	if se.count > 1 {
+		return fmt.Errorf("%w (and %d more errors)", se.first, se.count-1)
+	}
+	return se.first
+}
+
+// PageStream represents a stream of pages.
+//
+// Read pages from Pages() until it is closed, then call Err() to find out
+// whether the stream was complete. Errors() is closed together with Pages().
 type PageStream struct {
 	pages  chan Page
 	errors chan error
 	done   chan struct{}
+	errs   streamErrors
 }
 
 // NewPageStream creates a new PageStream
@@ -41,6 +76,12 @@ func (ps *PageStream) Done() <-chan struct{} {
 	return ps.done
 }
 
+// Err returns the first error the stream hit, or nil. It is only meaningful
+// after Pages() has been closed.
+func (ps *PageStream) Err() error {
+	return ps.errs.err()
+}
+
 // Close closes all channels
 func (ps *PageStream) Close() {
 	close(ps.pages)
@@ -55,12 +96,8 @@ func (c *client) StreamDescendantPages(ctx context.Context, parentID string) *Pa
 	go func() {
 		defer stream.Close()
 
-		if err := c.streamDescendantPagesRecursive(ctx, parentID, stream); err != nil {
-			select {
-			case stream.errors <- err:
-			case <-ctx.Done():
-				return
-			}
+		if err := c.streamDescendantPagesRecursive(ctx, parentID, stream, map[string]bool{parentID: true}); err != nil {
+			stream.errs.record(stream.errors, err)
 		}
 	}()
 
@@ -68,7 +105,9 @@ func (c *client) StreamDescendantPages(ctx context.Context, parentID string) *Pa
 }
 
 // streamDescendantPagesRecursive recursively streams pages without keeping them all in memory
-func (c *client) streamDescendantPagesRecursive(ctx context.Context, parentID string, stream *PageStream) error {
+// Pages are sent parents first. A failing branch is recorded as an error and
+// the other branches are still streamed.
+func (c *client) streamDescendantPagesRecursive(ctx context.Context, parentID string, stream *PageStream, visited map[string]bool) error {
 	// Get direct children
 	directChildren, err := c.GetChildPages(ctx, parentID)
 	if err != nil {
@@ -77,27 +116,35 @@ func (c *client) streamDescendantPagesRecursive(ctx context.Context, parentID st
 
 	// Stream direct children
 	for _, page := range directChildren {
+		if visited[page.ID] {
+			continue
+		}
+		visited[page.ID] = true
 		select {
 		case stream.pages <- page:
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 
-		// Recursively stream descendants
-		if err := c.streamDescendantPagesRecursive(ctx, page.ID, stream); err != nil {
-			// Log warning but continue with other pages
-			fmt.Printf("Warning: failed to stream descendants of page %s: %v\n", page.ID, err)
+		if err := c.streamDescendantPagesRecursive(ctx, page.ID, stream, visited); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			stream.errs.record(stream.errors, err)
 		}
 	}
 
 	return nil
 }
 
-// DatabaseRowStream represents a stream of database rows
+// DatabaseRowStream represents a stream of database rows.
+//
+// Read rows from Rows() until it is closed, then call Err().
 type DatabaseRowStream struct {
 	rows   chan DatabaseRow
 	errors chan error
 	done   chan struct{}
+	errs   streamErrors
 }
 
 // NewDatabaseRowStream creates a new DatabaseRowStream
@@ -124,6 +171,12 @@ func (drs *DatabaseRowStream) Done() <-chan struct{} {
 	return drs.done
 }
 
+// Err returns the first error the stream hit, or nil. It is only meaningful
+// after Rows() has been closed.
+func (drs *DatabaseRowStream) Err() error {
+	return drs.errs.err()
+}
+
 // Close closes all channels
 func (drs *DatabaseRowStream) Close() {
 	close(drs.rows)
@@ -146,11 +199,7 @@ func (c *client) StreamDatabaseRows(ctx context.Context, databaseID string) *Dat
 		for {
 			queryResp, err := c.QueryDatabase(ctx, databaseID, request)
 			if err != nil {
-				select {
-				case stream.errors <- fmt.Errorf("failed to query database: %w", err):
-				case <-ctx.Done():
-					return
-				}
+				stream.errs.record(stream.errors, fmt.Errorf("failed to query database: %w", err))
 				return
 			}
 
@@ -159,6 +208,7 @@ func (c *client) StreamDatabaseRows(ctx context.Context, databaseID string) *Dat
 				select {
 				case stream.rows <- row:
 				case <-ctx.Done():
+					stream.errs.record(stream.errors, ctx.Err())
 					return
 				}
 			}

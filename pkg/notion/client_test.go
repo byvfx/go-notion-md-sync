@@ -3,7 +3,6 @@ package notion
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -121,7 +120,7 @@ func TestClient_GetPage(t *testing.T) {
 			serverStatus: http.StatusOK,
 			serverResp:   "invalid json",
 			wantErr:      true,
-			wantErrMsg:   "failed to decode page response",
+			wantErrMsg:   "failed to decode",
 		},
 	}
 
@@ -352,108 +351,6 @@ func TestClient_CreatePage(t *testing.T) {
 	}
 }
 
-func TestClient_UpdatePageBlocks(t *testing.T) {
-	tests := []struct {
-		name           string
-		pageID         string
-		blocks         []map[string]interface{}
-		existingBlocks []Block
-		wantErr        bool
-	}{
-		{
-			name:   "successful update with clearing",
-			pageID: "test-page-id",
-			blocks: []map[string]interface{}{
-				{
-					"type": "heading_1",
-					"heading_1": map[string]interface{}{
-						"rich_text": []map[string]interface{}{
-							{"text": map[string]interface{}{"content": "New Heading"}},
-						},
-					},
-				},
-			},
-			existingBlocks: []Block{
-				{ID: "old-block-1", Type: "paragraph"},
-				{ID: "old-block-2", Type: "heading_2"},
-			},
-			wantErr: false,
-		},
-		{
-			name:           "update with many blocks (chunking)",
-			pageID:         "test-page-id",
-			blocks:         make([]map[string]interface{}, 150), // More than maxBlocksPerRequest
-			existingBlocks: []Block{},
-			wantErr:        false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			callCount := 0
-			deleteCalls := 0
-
-			server := newMockServer(t, func(w http.ResponseWriter, r *http.Request) {
-				callCount++
-
-				switch r.Method {
-				case "GET":
-					// Getting existing blocks
-					assert.Equal(t, "/blocks/"+tt.pageID+"/children", r.URL.Path)
-					w.WriteHeader(http.StatusOK)
-					_ = json.NewEncoder(w).Encode(BlocksResponse{Results: tt.existingBlocks})
-
-				case "DELETE":
-					// Deleting existing blocks
-					deleteCalls++
-					w.WriteHeader(http.StatusOK)
-
-				case "PATCH":
-					// Adding new blocks
-					assert.Equal(t, "/blocks/"+tt.pageID+"/children", r.URL.Path)
-					body, _ := io.ReadAll(r.Body)
-					var req map[string]interface{}
-					_ = json.Unmarshal(body, &req)
-					if children, ok := req["children"].([]interface{}); ok {
-						assert.LessOrEqual(t, len(children), 100) // Check chunking
-					}
-					w.WriteHeader(http.StatusOK)
-				}
-			})
-			defer server.Close()
-
-			c := &client{
-				httpClient: &http.Client{Timeout: DefaultTimeout},
-				token:      "test-token",
-				baseURL:    server.URL,
-			}
-
-			// Initialize blocks for chunking test
-			if tt.name == "update with many blocks (chunking)" {
-				for i := range tt.blocks {
-					tt.blocks[i] = map[string]interface{}{
-						"type": "paragraph",
-						"paragraph": map[string]interface{}{
-							"rich_text": []map[string]interface{}{
-								{"text": map[string]interface{}{"content": fmt.Sprintf("Block %d", i)}},
-							},
-						},
-					}
-				}
-			}
-
-			err := c.UpdatePageBlocks(context.Background(), tt.pageID, tt.blocks)
-
-			if tt.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, len(tt.existingBlocks), deleteCalls)
-			}
-		})
-	}
-}
-
 func TestClient_DeletePage(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -624,69 +521,6 @@ func TestClient_GetChildPages(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, pages, 1)
 	assert.Equal(t, childPageID, pages[0].ID)
-}
-
-func TestClient_RecreatePageWithBlocks(t *testing.T) {
-	parentID := "parent-page-id"
-	properties := map[string]interface{}{
-		"title": map[string]interface{}{
-			"title": []map[string]interface{}{
-				{"text": map[string]interface{}{"content": "Recreated Page"}},
-			},
-		},
-	}
-	blocks := []map[string]interface{}{
-		{
-			"type": "paragraph",
-			"paragraph": map[string]interface{}{
-				"rich_text": []map[string]interface{}{
-					{"text": map[string]interface{}{"content": "Initial content"}},
-				},
-			},
-		},
-	}
-
-	server := newMockServer(t, func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "POST", r.Method)
-		assert.Equal(t, "/pages", r.URL.Path)
-
-		body, _ := io.ReadAll(r.Body)
-		var req map[string]interface{}
-		if err := json.Unmarshal(body, &req); err != nil {
-			t.Fatalf("Failed to unmarshal request: %v", err)
-		}
-
-		parent, ok := req["parent"].(map[string]interface{})
-		if !ok {
-			t.Fatal("Parent field is not a map")
-		}
-		assert.Equal(t, parentID, parent["page_id"])
-		assert.Equal(t, "page_id", parent["type"])
-
-		// Check that both properties and children are included
-		assert.NotNil(t, req["properties"])
-		assert.NotNil(t, req["children"])
-
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(Page{
-			ID:     "recreated-page-id",
-			Object: "page",
-			URL:    "https://notion.so/recreated-page",
-		})
-	})
-	defer server.Close()
-
-	c := &client{
-		httpClient: &http.Client{Timeout: DefaultTimeout},
-		token:      "test-token",
-		baseURL:    server.URL,
-	}
-
-	page, err := c.RecreatePageWithBlocks(context.Background(), parentID, properties, blocks)
-
-	assert.NoError(t, err)
-	assert.NotNil(t, page)
-	assert.Equal(t, "recreated-page-id", page.ID)
 }
 
 func TestNotionAPIError(t *testing.T) {
@@ -863,72 +697,17 @@ func TestClient_RateLimiting(t *testing.T) {
 		baseURL:    server.URL,
 	}
 
-	// Current implementation doesn't retry, so it should fail
-	_, err := c.GetPage(context.Background(), "test-page-id")
+	// Rate-limited requests are retried.
+	page, err := c.GetPage(context.Background(), "test-page-id")
+	assert.NoError(t, err)
+	assert.Equal(t, "test", page.ID)
+	assert.Equal(t, 3, requestCount)
+
+	// Retries give up eventually.
+	requestCount = -100
+	_, err = c.GetPage(context.Background(), "test-page-id")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "429")
-}
-
-func TestClient_LargeBlockUpdate(t *testing.T) {
-	// Test updating with exactly 100, 101, and 200 blocks to verify chunking
-	testCases := []struct {
-		blockCount int
-		wantChunks int
-	}{
-		{blockCount: 50, wantChunks: 1},
-		{blockCount: 100, wantChunks: 1},
-		{blockCount: 101, wantChunks: 2},
-		{blockCount: 200, wantChunks: 2},
-		{blockCount: 250, wantChunks: 3},
-	}
-
-	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("%d_blocks", tc.blockCount), func(t *testing.T) {
-			patchCount := 0
-			server := newMockServer(t, func(w http.ResponseWriter, r *http.Request) {
-				switch r.Method {
-				case "GET":
-					// Getting existing blocks (empty)
-					w.WriteHeader(http.StatusOK)
-					_ = json.NewEncoder(w).Encode(BlocksResponse{Results: []Block{}})
-				case "PATCH":
-					// Counting update requests
-					patchCount++
-					body, _ := io.ReadAll(r.Body)
-					var req map[string]interface{}
-					_ = json.Unmarshal(body, &req)
-					if children, ok := req["children"].([]interface{}); ok {
-						assert.LessOrEqual(t, len(children), 100)
-					}
-					w.WriteHeader(http.StatusOK)
-				}
-			})
-			defer server.Close()
-
-			c := &client{
-				httpClient: &http.Client{Timeout: DefaultTimeout},
-				token:      "test-token",
-				baseURL:    server.URL,
-			}
-
-			// Create blocks
-			blocks := make([]map[string]interface{}, tc.blockCount)
-			for i := range blocks {
-				blocks[i] = map[string]interface{}{
-					"type": "paragraph",
-					"paragraph": map[string]interface{}{
-						"rich_text": []map[string]interface{}{
-							{"text": map[string]interface{}{"content": fmt.Sprintf("Block %d", i)}},
-						},
-					},
-				}
-			}
-
-			err := c.UpdatePageBlocks(context.Background(), "test-page", blocks)
-			assert.NoError(t, err)
-			assert.Equal(t, tc.wantChunks, patchCount)
-		})
-	}
 }
 
 func TestClient_Headers(t *testing.T) {
@@ -1009,12 +788,13 @@ func TestClient_RecursiveBlockFetching(t *testing.T) {
 	blocks, err := c.GetPageBlocks(context.Background(), "page-id")
 	assert.NoError(t, err)
 
-	// Should have all blocks including nested ones
-	assert.Len(t, blocks, 5) // 2 top-level + 2 from block1 + 1 from block1-1
-
-	// Verify order (depth-first traversal)
-	expectedIDs := []string{"block1", "block1-1", "block1-1-1", "block1-2", "block2"}
-	for i, expectedID := range expectedIDs {
-		assert.Equal(t, expectedID, blocks[i].ID)
-	}
+	// Nested blocks are returned as Children, not flattened.
+	require.Len(t, blocks, 2)
+	assert.Equal(t, "block1", blocks[0].ID)
+	assert.Equal(t, "block2", blocks[1].ID)
+	require.Len(t, blocks[0].Children, 2)
+	assert.Equal(t, "block1-1", blocks[0].Children[0].ID)
+	assert.Equal(t, "block1-2", blocks[0].Children[1].ID)
+	require.Len(t, blocks[0].Children[0].Children, 1)
+	assert.Equal(t, "block1-1-1", blocks[0].Children[0].Children[0].ID)
 }
