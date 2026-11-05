@@ -10,6 +10,7 @@ import (
 
 	"github.com/byvfx/go-notion-md-sync/pkg/config"
 	"github.com/byvfx/go-notion-md-sync/pkg/markdown"
+	"github.com/byvfx/go-notion-md-sync/pkg/notion"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -363,4 +364,50 @@ func TestPush_TitleRename(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte(content), 0644))
 	require.NoError(t, e.SyncFileToNotion(ctx, path))
 	assert.Equal(t, "Renamed in Notion", mem.title(otherID))
+}
+
+func TestBidirectional_ChangeDetection(t *testing.T) {
+	setup := func(t *testing.T, strategy string) (*memNotion, *engine, string, string) {
+		mem, e, root := workspace(t)
+		require.NoError(t, e.SyncAll(context.Background(), "pull"))
+		e.conflictResolver = NewConflictResolver(strategy)
+		otherID := mem.childrenOf(e.config.Notion.ParentPageID)[1]
+		return mem, e, filepath.Join(root, "Root", "Other", "Other.md"), otherID
+	}
+	editRemote := func(mem *memNotion, id, text string) {
+		mem.mu.Lock()
+		defer mem.mu.Unlock()
+		mem.content[id] = []notion.Block{paraBlock(text)}
+		mem.now = mem.now.Add(5 * time.Minute)
+		mem.pages[id].LastEditedTime = mem.now
+	}
+	editLocal := func(t *testing.T, path, text string) {
+		content := strings.Replace(readFile(t, path), "other text", text, 1)
+		require.NoError(t, os.WriteFile(path, []byte(content), 0644))
+		future := time.Now().Add(time.Minute) // clearly after the last sync
+		require.NoError(t, os.Chtimes(path, future, future))
+	}
+
+	t.Run("only Notion changed: pull", func(t *testing.T) {
+		mem, e, path, id := setup(t, "markdown_wins")
+		editRemote(mem, id, "remote edit")
+		require.NoError(t, e.SyncAll(context.Background(), "bidirectional"))
+		assert.Contains(t, readFile(t, path), "remote edit")
+		assert.Equal(t, 0, mem.updateCalls, "the Notion edit must not be overwritten")
+	})
+
+	t.Run("both changed: resolver decides", func(t *testing.T) {
+		mem, e, path, id := setup(t, "notion_wins")
+		editRemote(mem, id, "remote edit")
+		editLocal(t, path, "local edit")
+		require.NoError(t, e.SyncAll(context.Background(), "bidirectional"))
+		assert.Contains(t, readFile(t, path), "remote edit")
+
+		mem, e, path, id = setup(t, "markdown_wins")
+		editRemote(mem, id, "remote edit")
+		editLocal(t, path, "local edit")
+		require.NoError(t, e.SyncAll(context.Background(), "bidirectional"))
+		blocks, _ := mem.GetPageBlocks(context.Background(), id)
+		assert.Equal(t, "local edit", blocks[0].Paragraph.RichText[0].PlainText)
+	})
 }

@@ -168,7 +168,8 @@ func (e *engine) pushNewLocked(ctx context.Context, filePath string) (string, er
 
 	if err := e.writeWithFrontmatter(filePath, doc.Metadata, map[string]interface{}{
 		"notion_id":  pageID,
-		"updated_at": time.Now().Format(time.RFC3339),
+		"updated_at": time.Now().UTC().Format(time.RFC3339),
+		syncedAtKey:  syncedNow(),
 	}, doc.Content); err != nil {
 		return pageID, fmt.Errorf("created page %s but failed to save its ID in %s: %w", pageID, filePath, err)
 	}
@@ -278,7 +279,8 @@ func (e *engine) folderPageLocked(ctx context.Context, dir, root string, depth i
 		"title":        name,
 		"notion_id":    id,
 		"sync_enabled": true,
-		"updated_at":   time.Now().Format(time.RFC3339),
+		"updated_at":   time.Now().UTC().Format(time.RFC3339),
+		syncedAtKey:    syncedNow(),
 	}, ""); err != nil {
 		util.Warning("Created page %s for folder %s but could not write %s: %v", id, dir, ownFile, err)
 	}
@@ -445,6 +447,7 @@ func (e *engine) pullPage(ctx context.Context, page *notion.Page, filePath strin
 		"title":      title,
 		"notion_id":  page.ID,
 		"updated_at": updatedAt.UTC().Format(time.RFC3339),
+		syncedAtKey:  syncedNow(),
 	}
 	if !page.CreatedTime.IsZero() {
 		updates["created_at"] = page.CreatedTime.UTC().Format(time.RFC3339)
@@ -719,7 +722,13 @@ func (e *engine) syncFileWithConflictDetection(ctx context.Context, filePath str
 		// Only the local file changed since the last sync.
 		return e.SyncFileToNotion(ctx, filePath)
 	}
+	if !localChangedSinceSync(filePath, doc.Metadata) {
+		// Only the Notion page changed since the last sync.
+		fmt.Printf("Pulling %s (changed in Notion)\n", e.describePath(filePath))
+		return e.pullPage(ctx, page, filePath, plan)
+	}
 
+	// Both sides changed.
 	var localTime time.Time
 	if info, err := os.Stat(filePath); err == nil {
 		localTime = info.ModTime()
@@ -734,6 +743,41 @@ func (e *engine) syncFileWithConflictDetection(ctx context.Context, filePath str
 		return e.pullPage(ctx, page, filePath, plan)
 	}
 	return e.SyncFileToNotion(ctx, filePath)
+}
+
+// syncedAtKey is the frontmatter field recording when the tool last wrote
+// the file, on the local clock. Comparing it with the file's modification
+// time tells whether the file was edited since the last sync.
+const syncedAtKey = "synced_at"
+
+// syncedAtSlack absorbs file systems with coarse modification times.
+const syncedAtSlack = 2 * time.Second
+
+func syncedNow() string {
+	return time.Now().UTC().Format(time.RFC3339Nano)
+}
+
+// localChangedSinceSync reports whether a file was modified after the tool
+// last wrote it. Files without a synced_at are treated as changed.
+func localChangedSinceSync(filePath string, meta map[string]interface{}) bool {
+	var syncedAt time.Time
+	switch v := meta[syncedAtKey].(type) {
+	case string:
+		t, err := time.Parse(time.RFC3339Nano, v)
+		if err != nil {
+			return true
+		}
+		syncedAt = t
+	case time.Time:
+		syncedAt = v
+	default:
+		return true
+	}
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return true
+	}
+	return info.ModTime().After(syncedAt.Add(syncedAtSlack))
 }
 
 // markSynced records in the file's frontmatter when the page was last synced,
@@ -754,6 +798,7 @@ func (e *engine) markSynced(ctx context.Context, filePath, pageID string) {
 	}
 	if err := e.writeWithFrontmatter(filePath, doc.Metadata, map[string]interface{}{
 		"updated_at": stamp.UTC().Format(time.RFC3339),
+		syncedAtKey:  syncedNow(),
 	}, doc.Content); err != nil {
 		util.Warning("Pushed %s but could not update its frontmatter: %v", filePath, err)
 	}
