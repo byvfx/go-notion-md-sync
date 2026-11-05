@@ -104,7 +104,7 @@ func (e *engine) SyncFileToNotion(ctx context.Context, filePath string) error {
 
 // pushExisting replaces the content (and, if changed, the title) of the page
 // a file is linked to. Nothing is sent when Notion already has the same
-// content.
+// content. After a push the file's updated_at records Notion's edit time.
 func (e *engine) pushExisting(ctx context.Context, doc *markdown.Document, fm *markdown.FrontmatterFields) error {
 	blocks, err := e.converter.MarkdownToBlocks(doc.Content)
 	if err != nil {
@@ -113,14 +113,20 @@ func (e *engine) pushExisting(ctx context.Context, doc *markdown.Document, fm *m
 
 	if remote, err := e.notion.GetPageBlocks(ctx, fm.NotionID); err == nil {
 		if remoteMD, err := e.converter.BlocksToMarkdown(remote); err == nil && !HasConflict(doc.Content, remoteMD) {
-			return e.updateTitle(ctx, fm.NotionID, fm.Title)
+			return e.updateTitle(ctx, fm)
 		}
 	}
 
-	if err := e.updateTitle(ctx, fm.NotionID, fm.Title); err != nil {
+	if err := e.updateTitle(ctx, fm); err != nil {
 		return err
 	}
-	return e.updateNotionPage(ctx, fm.NotionID, fm.Title, blocks)
+	if err := e.updateNotionPage(ctx, fm.NotionID, fm.Title, blocks); err != nil {
+		return err
+	}
+	if doc.FilePath != "" {
+		e.markSynced(ctx, doc.FilePath, fm.NotionID)
+	}
+	return nil
 }
 
 // pushNewLocked creates a page for a file that has no notion_id yet and
@@ -321,20 +327,28 @@ func (e *engine) updateNotionPage(ctx context.Context, pageID, title string, blo
 	return e.notion.UpdatePageBlocks(ctx, pageID, blocks)
 }
 
-// updateTitle renames the page when the frontmatter title differs.
-func (e *engine) updateTitle(ctx context.Context, pageID, title string) error {
-	if title == "" {
+// updateTitle renames the page when the frontmatter title differs. It
+// doesn't when the page changed in Notion since the file was last synced:
+// then the difference is more likely a rename in Notion, which must not be
+// reverted.
+func (e *engine) updateTitle(ctx context.Context, fm *markdown.FrontmatterFields) error {
+	if fm.Title == "" {
 		return nil
 	}
-	page, err := e.notion.GetPage(ctx, pageID)
+	page, err := e.notion.GetPage(ctx, fm.NotionID)
 	if err != nil {
-		return fmt.Errorf("failed to get page %s: %w", pageID, err)
+		return fmt.Errorf("failed to get page %s: %w", fm.NotionID, err)
 	}
-	if page.Properties == nil || e.extractTitleFromPage(page) == title {
+	current := e.extractTitleFromPage(page)
+	if page.Properties == nil || current == fm.Title {
 		return nil
 	}
-	if _, err := e.notion.UpdatePageProperties(ctx, pageID, titleProperties(title)); err != nil {
-		return fmt.Errorf("failed to rename page %s: %w", pageID, err)
+	if fm.UpdatedAt != nil && page.LastEditedTime.After(*fm.UpdatedAt) {
+		util.Warning("Not renaming %q to %q: the page changed in Notion since the last sync. Pull first to take the Notion title.", current, fm.Title)
+		return nil
+	}
+	if _, err := e.notion.UpdatePageProperties(ctx, fm.NotionID, titleProperties(fm.Title)); err != nil {
+		return fmt.Errorf("failed to rename page %s: %w", fm.NotionID, err)
 	}
 	return nil
 }
@@ -697,16 +711,13 @@ func (e *engine) syncFileWithConflictDetection(ctx context.Context, filePath str
 	}
 
 	if !HasConflict(doc.Content, remoteContent) {
-		return e.updateTitle(ctx, fm.NotionID, fm.Title)
+		return e.updateTitle(ctx, fm)
 	}
 
 	remoteChanged := fm.UpdatedAt == nil || page.LastEditedTime.After(*fm.UpdatedAt)
 	if !remoteChanged {
 		// Only the local file changed since the last sync.
-		if err := e.SyncFileToNotion(ctx, filePath); err != nil {
-			return err
-		}
-		return e.markSynced(ctx, filePath, fm.NotionID)
+		return e.SyncFileToNotion(ctx, filePath)
 	}
 
 	var localTime time.Time
@@ -722,31 +733,30 @@ func (e *engine) syncFileWithConflictDetection(ctx context.Context, filePath str
 	if resolved == remoteContent && HasConflict(resolved, doc.Content) {
 		return e.pullPage(ctx, page, filePath, plan)
 	}
-	if err := e.SyncFileToNotion(ctx, filePath); err != nil {
-		return err
-	}
-	return e.markSynced(ctx, filePath, fm.NotionID)
+	return e.SyncFileToNotion(ctx, filePath)
 }
 
 // markSynced records in the file's frontmatter when the page was last synced,
 // using Notion's own edit time so the next sync can tell whether the page was
-// changed in Notion since.
-func (e *engine) markSynced(ctx context.Context, filePath, pageID string) error {
+// changed in Notion since. It is best effort: the push already succeeded.
+func (e *engine) markSynced(ctx context.Context, filePath, pageID string) {
 	page, err := e.notion.GetPage(ctx, pageID)
 	if err != nil {
-		return nil // The push worked; the timestamp is only an optimisation.
+		return
 	}
 	doc, err := e.parser.ParseFile(filePath)
 	if err != nil {
-		return nil
+		return
 	}
 	stamp := page.LastEditedTime
 	if stamp.IsZero() {
 		stamp = time.Now()
 	}
-	return e.writeWithFrontmatter(filePath, doc.Metadata, map[string]interface{}{
+	if err := e.writeWithFrontmatter(filePath, doc.Metadata, map[string]interface{}{
 		"updated_at": stamp.UTC().Format(time.RFC3339),
-	}, doc.Content)
+	}, doc.Content); err != nil {
+		util.Warning("Pushed %s but could not update its frontmatter: %v", filePath, err)
+	}
 }
 
 // ---------------------------------------------------------------- single file

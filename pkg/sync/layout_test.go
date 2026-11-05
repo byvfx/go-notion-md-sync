@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/byvfx/go-notion-md-sync/pkg/config"
 	"github.com/byvfx/go-notion-md-sync/pkg/markdown"
@@ -337,4 +338,29 @@ func TestRelinkMarkers(t *testing.T) {
 		return "./A (1)/A (1).md", true
 	})
 	assert.Equal(t, "[📄 A](<./A (1)/A (1).md>) "+markerComment("child_page", id)+"\ntext", out)
+}
+
+func TestPush_TitleRename(t *testing.T) {
+	mem, e, root := workspace(t)
+	ctx := context.Background()
+	require.NoError(t, e.SyncAll(ctx, "pull"))
+	otherID := mem.childrenOf(e.config.Notion.ParentPageID)[1]
+	path := filepath.Join(root, "Root", "Other", "Other.md")
+
+	// Renamed locally: the new title is pushed.
+	content := strings.Replace(readFile(t, path), "title: Other", "title: Renamed", 1)
+	require.NoError(t, os.WriteFile(path, []byte(content), 0644))
+	require.NoError(t, e.SyncFileToNotion(ctx, path))
+	assert.Equal(t, "Renamed", mem.title(otherID))
+
+	// Renamed in Notion after the last sync: pushing must not revert it.
+	_, _ = mem.UpdatePageProperties(ctx, otherID, titleProperties("Renamed in Notion"))
+	mem.mu.Lock()
+	mem.now = mem.now.Add(10 * time.Minute)
+	mem.pages[otherID].LastEditedTime = mem.now
+	mem.mu.Unlock()
+	content = strings.Replace(readFile(t, path), "other text", "edited", 1)
+	require.NoError(t, os.WriteFile(path, []byte(content), 0644))
+	require.NoError(t, e.SyncFileToNotion(ctx, path))
+	assert.Equal(t, "Renamed in Notion", mem.title(otherID))
 }
