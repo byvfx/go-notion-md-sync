@@ -1,5 +1,11 @@
 package notion
 
+import (
+	"strings"
+	"unicode"
+	"unicode/utf8"
+)
+
 // AnchorBlockType is the type of the placeholder block that the converter puts
 // in a block list to say "the following blocks go right after this existing
 // block". UpdatePageBlocks consumes anchors; they are never sent to Notion.
@@ -81,7 +87,67 @@ func IsPreservedBlock(b *Block) bool {
 	if b.Type == "bookmark" && b.Bookmark != nil && len(b.Bookmark.Caption) > 0 {
 		return true
 	}
+	// Toggle summaries and image captions are written as plain text.
+	if b.Toggle != nil && hasStyling(b.Toggle.RichText) {
+		return true
+	}
+	if b.Image != nil && hasStyling(b.Image.Caption) {
+		return true
+	}
+	// Callouts are written as "> emoji text"; one without an emoji icon
+	// (an uploaded or external icon, or none) would come back as a quote.
+	if b.Type == "callout" && (b.Callout == nil || b.Callout.Icon == nil || b.Callout.Icon.Emoji == "") {
+		return true
+	}
+	// A quote starting with an emoji would come back as a callout.
+	if b.Type == "quote" && b.Quote != nil && startsWithEmojiWord(plainOf(b.Quote.RichText)) {
+		return true
+	}
+	// Markdown has no way to nest blocks under a paragraph.
+	if b.Type == "paragraph" && len(b.Children) > 0 {
+		return true
+	}
 	return false
+}
+
+// hasStyling reports whether rich text has formatting or links.
+func hasStyling(rts []RichText) bool {
+	for _, rt := range rts {
+		if rt.Href != "" || (rt.Text != nil && rt.Text.Link != nil) {
+			return true
+		}
+		if a := rt.Annotations; a != nil && (a.Bold || a.Italic || a.Strikethrough || a.Underline || a.Code) {
+			return true
+		}
+	}
+	return false
+}
+
+func plainOf(rts []RichText) string {
+	var b strings.Builder
+	for _, rt := range rts {
+		if rt.PlainText != "" {
+			b.WriteString(rt.PlainText)
+		} else if rt.Text != nil {
+			b.WriteString(rt.Text.Content)
+		}
+	}
+	return b.String()
+}
+
+// startsWithEmojiWord reports whether text starts with an emoji followed by a
+// space, which is how callouts are written in Markdown.
+func startsWithEmojiWord(text string) bool {
+	sp := strings.IndexByte(text, ' ')
+	if sp <= 0 || sp > 32 {
+		return false
+	}
+	word := text[:sp]
+	if utf8.RuneCountInString(word) > 10 {
+		return false
+	}
+	r, _ := utf8.DecodeRuneInString(word)
+	return r >= 0x1F000 || (r >= 0x2190 && r <= 0x2BFF) || unicode.Is(unicode.So, r)
 }
 
 func isDefaultColor(c string) bool {

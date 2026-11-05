@@ -1,7 +1,10 @@
 package sync
 
 import (
+	"context"
+	"io"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -202,5 +205,27 @@ func TestHasConflict_Normalization(t *testing.T) {
 				t.Errorf("HasConflict() = %v, want %v", got, tt.expectConflict)
 			}
 		})
+	}
+}
+
+func TestResolveConflictAt_PromptStopsOnCancel(t *testing.T) {
+	r, w := io.Pipe() // nobody ever answers
+	defer func() { _ = w.Close() }()
+	old := promptInput
+	promptInput = r
+	defer func() { promptInput = old }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := NewConflictResolver("diff").ResolveConflictAt(ctx, "local", "remote", "f.md", time.Time{}, time.Time{})
+		done <- err
+	}()
+	cancel()
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(2 * time.Second):
+		t.Fatal("the conflict prompt ignored cancellation")
 	}
 }

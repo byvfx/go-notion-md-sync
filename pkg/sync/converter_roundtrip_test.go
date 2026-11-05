@@ -241,7 +241,7 @@ func TestConverter_KeepsSettingsMarkdownCannotExpress(t *testing.T) {
 	}
 	plain := notion.Block{Type: "table", Table: &notion.TableBlock{TableWidth: 1, HasColumnHeader: true}, Children: []notion.Block{row}}
 	assert.False(t, notion.ShouldPreserveTree(&plain), "ordinary tables still round-trip")
-	callout := notion.Block{Type: "callout", Callout: &notion.CalloutBlock{Color: "gray_background"}}
+	callout := notion.Block{Type: "callout", Callout: &notion.CalloutBlock{Color: "gray_background", Icon: &notion.CalloutIcon{Type: "emoji", Emoji: "💡"}}}
 	assert.False(t, notion.ShouldPreserveTree(&callout), "the default callout color is not a custom color")
 }
 
@@ -264,4 +264,38 @@ func TestConverter_MathInIndentedCodeIsCode(t *testing.T) {
 	nested := toBlocks(t, "- item\n  - sub\n\n    $$\n    x^2\n    $$")
 	require.Len(t, nested, 1)
 	assert.Contains(t, fmt.Sprint(nested), "equation")
+}
+
+func TestConverter_KeepsBlocksWhoseMarkdownWouldChangeThem(t *testing.T) {
+	styled := []notion.RichText{{Type: "text", PlainText: "bold", Annotations: &notion.Annotations{Bold: true}}}
+	cases := map[string]notion.Block{
+		"quote starting with emoji":  {Type: "quote", Quote: &notion.RichTextBlock{RichText: []notion.RichText{{Type: "text", PlainText: "💡 Remember this"}}}},
+		"callout with external icon": {Type: "callout", Callout: &notion.CalloutBlock{Icon: &notion.CalloutIcon{Type: "external"}}},
+		"callout without icon":       {Type: "callout", Callout: &notion.CalloutBlock{}},
+		"styled toggle summary":      {Type: "toggle", Toggle: &notion.ToggleBlock{RichText: styled}},
+		"styled image caption":       {Type: "image", Image: &notion.ImageBlock{External: &notion.ExternalFile{URL: "https://x/y.png"}, Caption: styled}},
+		"paragraph with children":    {Type: "paragraph", Paragraph: &notion.RichTextBlock{}, Children: []notion.Block{paraBlock("nested")}},
+	}
+	for name, b := range cases {
+		t.Run(name, func(t *testing.T) {
+			assert.True(t, notion.ShouldPreserveTree(&b))
+		})
+	}
+	quote := notion.Block{Type: "quote", Quote: &notion.RichTextBlock{RichText: []notion.RichText{{Type: "text", PlainText: "plain quote"}}}}
+	assert.False(t, notion.ShouldPreserveTree(&quote))
+}
+
+func TestConverter_FencesInsideListItems(t *testing.T) {
+	id := "11111111-2222-3333-4444-555555555555"
+	for name, md := range map[string]string{
+		"fence on the marker line": "- ```\n  " + markerComment("child_page", id) + "\n  $$\n  x\n  $$\n  ```",
+		"deeply indented fence":    "- a\n  - b\n\n        ```\n        " + markerComment("child_page", id) + "\n        ```",
+	} {
+		t.Run(name, func(t *testing.T) {
+			out := fmt.Sprint(toBlocks(t, md))
+			assert.NotContains(t, out, notion.AnchorBlockType)
+			assert.NotContains(t, out, "equation")
+			assert.Contains(t, out, "notion:child_page", "the code keeps its text")
+		})
+	}
 }

@@ -293,6 +293,39 @@ func (nc *NotionCacheImpl) Stats() CacheStats {
 type CachedNotionClient struct {
 	client notion.Client
 	cache  NotionCache
+
+	// gen counts invalidations per page. A read only stores what it fetched
+	// if no invalidation happened while it was fetching, so a write that
+	// finishes during a slow read can't leave the old content cached.
+	genMu sync.Mutex
+	gen   map[string]uint64
+}
+
+func (c *CachedNotionClient) generation(id string) uint64 {
+	c.genMu.Lock()
+	defer c.genMu.Unlock()
+	return c.gen[id]
+}
+
+// invalidate drops a page from the cache and makes in-flight reads of it
+// discard their results.
+func (c *CachedNotionClient) invalidate(id string) {
+	c.genMu.Lock()
+	defer c.genMu.Unlock()
+	if c.gen == nil {
+		c.gen = make(map[string]uint64)
+	}
+	c.gen[id]++
+	c.cache.InvalidatePage(id)
+}
+
+// storeIfCurrent runs store only if the page wasn't invalidated since gen.
+func (c *CachedNotionClient) storeIfCurrent(id string, gen uint64, store func()) {
+	c.genMu.Lock()
+	defer c.genMu.Unlock()
+	if c.gen[id] == gen {
+		store()
+	}
 }
 
 // NewCachedNotionClient creates a new cached notion client
@@ -311,13 +344,14 @@ func (c *CachedNotionClient) GetPage(ctx context.Context, pageID string) (*notio
 	}
 
 	// Fetch from API
+	gen := c.generation(pageID)
 	page, err := c.client.GetPage(ctx, pageID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Cache the result
-	c.cache.SetPage(pageID, page, 0) // Use default TTL
+	c.storeIfCurrent(pageID, gen, func() { c.cache.SetPage(pageID, page, 0) })
 	return page, nil
 }
 
@@ -329,13 +363,14 @@ func (c *CachedNotionClient) GetPageBlocks(ctx context.Context, pageID string) (
 	}
 
 	// Fetch from API
+	gen := c.generation(pageID)
 	blocks, err := c.client.GetPageBlocks(ctx, pageID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Cache the result
-	c.cache.SetPageBlocks(pageID, blocks, 0) // Use default TTL
+	c.storeIfCurrent(pageID, gen, func() { c.cache.SetPageBlocks(pageID, blocks, 0) })
 	return blocks, nil
 }
 
@@ -363,7 +398,7 @@ func (c *CachedNotionClient) GetDatabase(ctx context.Context, databaseID string)
 // now include the new page.
 func (c *CachedNotionClient) CreatePage(ctx context.Context, parentID string, properties map[string]interface{}) (*notion.Page, error) {
 	page, err := c.client.CreatePage(ctx, parentID, properties)
-	c.cache.InvalidatePage(parentID)
+	c.invalidate(parentID)
 	return page, err
 }
 
@@ -371,17 +406,17 @@ func (c *CachedNotionClient) CreatePage(ctx context.Context, parentID string, pr
 // the write and again after it, so a read racing with the update cannot
 // leave stale blocks cached.
 func (c *CachedNotionClient) UpdatePageBlocks(ctx context.Context, pageID string, blocks []map[string]interface{}) error {
-	c.cache.InvalidatePage(pageID)
+	c.invalidate(pageID)
 	err := c.client.UpdatePageBlocks(ctx, pageID, blocks)
-	c.cache.InvalidatePage(pageID)
+	c.invalidate(pageID)
 	return err
 }
 
 // DeletePage deletes a page and invalidates it.
 func (c *CachedNotionClient) DeletePage(ctx context.Context, pageID string) error {
-	c.cache.InvalidatePage(pageID)
+	c.invalidate(pageID)
 	err := c.client.DeletePage(ctx, pageID)
-	c.cache.InvalidatePage(pageID)
+	c.invalidate(pageID)
 	return err
 }
 
@@ -389,9 +424,9 @@ func (c *CachedNotionClient) DeletePage(ctx context.Context, pageID string) erro
 // parent and the resulting page.
 func (c *CachedNotionClient) RecreatePageWithBlocks(ctx context.Context, parentID string, properties map[string]interface{}, blocks []map[string]interface{}) (*notion.Page, error) {
 	page, err := c.client.RecreatePageWithBlocks(ctx, parentID, properties, blocks)
-	c.cache.InvalidatePage(parentID)
+	c.invalidate(parentID)
 	if page != nil {
-		c.cache.InvalidatePage(page.ID)
+		c.invalidate(page.ID)
 	}
 	return page, err
 }
@@ -425,7 +460,7 @@ func (c *CachedNotionClient) QueryDatabase(ctx context.Context, databaseID strin
 func (c *CachedNotionClient) CreateDatabase(ctx context.Context, request *notion.CreateDatabaseRequest) (*notion.Database, error) {
 	database, err := c.client.CreateDatabase(ctx, request)
 	if request != nil && request.Parent.PageID != "" {
-		c.cache.InvalidatePage(request.Parent.PageID)
+		c.invalidate(request.Parent.PageID)
 	}
 	return database, err
 }
@@ -439,9 +474,9 @@ func (c *CachedNotionClient) CreateDatabaseRow(ctx context.Context, databaseID s
 
 // UpdateDatabaseRow updates a row (a page) and invalidates it.
 func (c *CachedNotionClient) UpdateDatabaseRow(ctx context.Context, pageID string, properties map[string]notion.PropertyValue) (*notion.DatabaseRow, error) {
-	c.cache.InvalidatePage(pageID)
+	c.invalidate(pageID)
 	row, err := c.client.UpdateDatabaseRow(ctx, pageID, properties)
-	c.cache.InvalidatePage(pageID)
+	c.invalidate(pageID)
 	return row, err
 }
 

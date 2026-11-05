@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -490,4 +491,37 @@ func TestPull_DoesNotOverwriteUnpushedDraft(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "the Notion page is pulled to another file")
+}
+
+func TestPlanPaths_NeverReusesAPath(t *testing.T) {
+	_, e, root := workspace(t)
+	rootID := e.config.Notion.ParentPageID
+	pages := []notion.Page{{ID: rootID, Properties: titleProps("Root")}}
+	// Many same-title siblings whose IDs share the first eight characters.
+	for i := 0; i < 150; i++ {
+		pages = append(pages, notion.Page{
+			ID:         fmt.Sprintf("aaaaaaaa-0000-0000-0000-%012d", i),
+			Properties: titleProps("Same"),
+			Parent:     notion.Parent{Type: "page_id", PageID: rootID},
+		})
+	}
+	// Drafts occupy some of the candidate names.
+	for _, name := range []string{"Same", "Same (aaaaaaaa)"} {
+		p := filepath.Join(root, "Root", name, name+".md")
+		require.NoError(t, os.MkdirAll(filepath.Dir(p), 0755))
+		require.NoError(t, os.WriteFile(p, []byte("draft"), 0644))
+	}
+	plan := e.planPaths(pages, map[string]string{})
+	seen := map[string]string{}
+	for _, p := range pages {
+		path, ok := plan.path(p.ID)
+		require.True(t, ok)
+		if other, dup := seen[pathKey(path)]; dup {
+			t.Fatalf("%s and %s both planned at %s", other, p.ID, path)
+		}
+		seen[pathKey(path)] = p.ID
+		if p.ID != rootID {
+			assert.NoFileExists(t, path, "a planned path must not be an existing draft")
+		}
+	}
 }

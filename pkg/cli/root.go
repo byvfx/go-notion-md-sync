@@ -30,6 +30,12 @@ func commandContext() (context.Context, context.CancelFunc) {
 	}
 	ctx, cancelSignal := signal.NotifyContext(context.Background(), os.Interrupt)
 	ctx, cancelTimeout := context.WithTimeout(ctx, timeout)
+	go func() {
+		// Once cancelled (first Ctrl+C or timeout), restore the default
+		// handling so a second Ctrl+C always exits.
+		<-ctx.Done()
+		cancelSignal()
+	}()
 	return ctx, func() {
 		cancelTimeout()
 		cancelSignal()

@@ -76,12 +76,10 @@ type fenceTracker struct {
 }
 
 // update consumes a line and reports whether it is inside (or delimits) a
-// fenced code block.
+// fenced code block. Fences may be indented (inside list items) or follow a
+// list marker or quote marker on the same line.
 func (f *fenceTracker) update(line string) bool {
-	trimmed := strings.TrimLeft(line, " ")
-	if len(line)-len(trimmed) > 3 {
-		return f.n > 0
-	}
+	trimmed := stripContainerPrefix(line)
 	if f.n == 0 {
 		if c, n := fenceRun(trimmed); n >= 3 {
 			if c == '`' && strings.Contains(trimmed[n:], "`") {
@@ -96,6 +94,14 @@ func (f *fenceTracker) update(line string) bool {
 		f.n = 0
 	}
 	return true
+}
+
+var containerPrefixRe = regexp.MustCompile(`^(?:\s*(?:>|[-*+]|[0-9]{1,9}[.)])(?:\s+|$))*\s*`)
+
+// stripContainerPrefix removes indentation and list or quote markers from
+// the start of a line.
+func stripContainerPrefix(line string) string {
+	return line[len(containerPrefixRe.FindString(line)):]
 }
 
 func fenceRun(s string) (byte, int) {

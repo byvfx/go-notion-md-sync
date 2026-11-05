@@ -136,7 +136,8 @@ func (e *engine) planPaths(pages []notion.Page, local map[string]string) *pagePl
 			// A file already on disk here belongs to another page or is an
 			// unpushed draft (this page's own file was found by notion_id
 			// above): never plan to overwrite it.
-			if (!taken[pathKey(p)] && !fileExists(p)) || n > 100 {
+			// The set of taken paths is finite, so this always ends.
+			if !taken[pathKey(p)] && !fileExists(p) {
 				path = p
 				break
 			}

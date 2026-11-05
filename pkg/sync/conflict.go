@@ -2,7 +2,9 @@ package sync
 
 import (
 	"bufio"
+	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -24,17 +26,19 @@ func NewConflictResolver(strategy string) *ConflictResolver {
 
 // ResolveConflict resolves a conflict between local and remote content
 func (cr *ConflictResolver) ResolveConflict(localContent, remoteContent, filePath string) (string, error) {
+	return cr.resolve(context.Background(), localContent, remoteContent, filePath)
+}
+
+func (cr *ConflictResolver) resolve(ctx context.Context, localContent, remoteContent, filePath string) (string, error) {
 	switch cr.strategy {
 	case "newer":
-		return cr.resolveByNewer(localContent, remoteContent, filePath)
+		return cr.resolveByDiffCtx(ctx, localContent, remoteContent, filePath)
 	case "notion_wins":
 		return remoteContent, nil
 	case "markdown_wins":
 		return localContent, nil
-	case "diff":
-		return cr.resolveByDiff(localContent, remoteContent, filePath)
 	default:
-		return cr.resolveByDiff(localContent, remoteContent, filePath)
+		return cr.resolveByDiffCtx(ctx, localContent, remoteContent, filePath)
 	}
 }
 
@@ -42,7 +46,8 @@ func (cr *ConflictResolver) ResolveConflict(localContent, remoteContent, filePat
 // time the local file and the Notion page were last changed. The "newer"
 // strategy uses them to pick the most recent version; when a time is
 // unknown it falls back to showing a diff.
-func (cr *ConflictResolver) ResolveConflictAt(localContent, remoteContent, filePath string, localTime, remoteTime time.Time) (string, error) {
+// The prompt shown by the diff strategy gives up when ctx is cancelled.
+func (cr *ConflictResolver) ResolveConflictAt(ctx context.Context, localContent, remoteContent, filePath string, localTime, remoteTime time.Time) (string, error) {
 	if cr.strategy == "newer" && !localTime.IsZero() && !remoteTime.IsZero() {
 		if localTime.After(remoteTime) {
 			fmt.Printf("Conflict in %s: local file is newer, keeping it\n", filePath)
@@ -51,7 +56,7 @@ func (cr *ConflictResolver) ResolveConflictAt(localContent, remoteContent, fileP
 		fmt.Printf("Conflict in %s: Notion page is newer, keeping it\n", filePath)
 		return remoteContent, nil
 	}
-	return cr.ResolveConflict(localContent, remoteContent, filePath)
+	return cr.resolve(ctx, localContent, remoteContent, filePath)
 }
 
 // resolveByNewer resolves conflict by choosing the newer version
@@ -67,6 +72,38 @@ func (cr *ConflictResolver) resolveByNewer(localContent, remoteContent, filePath
 
 // resolveByDiff shows a diff and lets the user choose
 func (cr *ConflictResolver) resolveByDiff(localContent, remoteContent, filePath string) (string, error) {
+	return cr.resolveByDiffCtx(context.Background(), localContent, remoteContent, filePath)
+}
+
+// promptInput is where conflict answers are read from (stdin; tests replace
+// it).
+var promptInput io.Reader = os.Stdin
+
+// readAnswer reads a line from promptInput, giving up when ctx ends.
+func readAnswer(ctx context.Context) (string, error) {
+	type result struct {
+		line string
+		err  error
+	}
+	ch := make(chan result, 1)
+	in := promptInput
+	go func() {
+		line, err := bufio.NewReader(in).ReadString('\n')
+		ch <- result{line, err}
+	}()
+	select {
+	case r := <-ch:
+		if r.err != nil && r.line == "" {
+			return "", r.err
+		}
+		return r.line, nil
+	case <-ctx.Done():
+		fmt.Println()
+		return "", ctx.Err()
+	}
+}
+
+func (cr *ConflictResolver) resolveByDiffCtx(ctx context.Context, localContent, remoteContent, filePath string) (string, error) {
 	// Check if content is actually different
 	if localContent == remoteContent {
 		return localContent, nil
@@ -87,8 +124,7 @@ func (cr *ConflictResolver) resolveByDiff(localContent, remoteContent, filePath 
 	fmt.Println("  [s] Skip this file")
 	fmt.Print("\nYour choice [l/r/s]: ")
 
-	reader := bufio.NewReader(os.Stdin)
-	choice, err := reader.ReadString('\n')
+	choice, err := readAnswer(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to read user input: %w", err)
 	}

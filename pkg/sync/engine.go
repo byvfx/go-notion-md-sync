@@ -742,7 +742,7 @@ func (e *engine) syncFileWithConflictDetection(ctx context.Context, filePath str
 	if info, err := os.Stat(filePath); err == nil {
 		localTime = info.ModTime()
 	}
-	resolved, err := e.conflictResolver.ResolveConflictAt(doc.Content, remoteContent, filePath, localTime, page.LastEditedTime)
+	resolved, err := e.conflictResolver.ResolveConflictAt(ctx, doc.Content, remoteContent, filePath, localTime, page.LastEditedTime)
 	if err != nil {
 		fmt.Printf("Skipping file %s: %v\n", filePath, err)
 		return nil
