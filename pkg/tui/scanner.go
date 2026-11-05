@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,12 +9,17 @@ import (
 	"time"
 
 	"github.com/byvfx/go-notion-md-sync/pkg/config"
+	"github.com/byvfx/go-notion-md-sync/pkg/staging"
+	"github.com/byvfx/go-notion-md-sync/pkg/util"
 	"github.com/charmbracelet/bubbles/list"
 )
 
 // FileScanner scans the file system for markdown files
 type FileScanner struct {
 	config *config.Config
+	// stagingRoot is the staging area root used for file status. Empty
+	// means the working directory, matching the CLI staging commands.
+	stagingRoot string
 }
 
 // NewFileScanner creates a new file scanner
@@ -38,6 +44,8 @@ func (fs *FileScanner) ScanFiles() ([]list.Item, error) {
 		return nil, fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
+	resolver := fs.newResolver()
+
 	// Walk the directory tree
 	err = filepath.Walk(absRoot, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -45,22 +53,19 @@ func (fs *FileScanner) ScanFiles() ([]list.Item, error) {
 		}
 
 		// Skip hidden files and directories
-		if strings.HasPrefix(info.Name(), ".") {
+		if path != absRoot && strings.HasPrefix(info.Name(), ".") {
 			if info.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 
-		// Check excluded patterns
-		for _, pattern := range fs.config.Directories.ExcludedPatterns {
-			matched, err := filepath.Match(pattern, info.Name())
-			if err == nil && matched {
-				if info.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
+		// Check excluded patterns (relative to the markdown root)
+		if path != absRoot && util.IsExcluded(fs.config.Directories.ExcludedPatterns, absRoot, path) {
+			if info.IsDir() {
+				return filepath.SkipDir
 			}
+			return nil
 		}
 
 		// Get relative path for display
@@ -89,7 +94,7 @@ func (fs *FileScanner) ScanFiles() ([]list.Item, error) {
 			item := FileItem{
 				Path:        path,
 				Name:        relPath,
-				Status:      getFileStatus(info),
+				Status:      resolver.status(path),
 				Size:        info.Size(),
 				IsDirectory: false,
 				Desc:        formatFileInfo(info),
@@ -107,19 +112,106 @@ func (fs *FileScanner) ScanFiles() ([]list.Item, error) {
 	return items, nil
 }
 
-// getFileStatus determines the sync status of a file
-func getFileStatus(info os.FileInfo) SyncStatus {
-	// Check modification time
-	modTime := info.ModTime()
-	now := time.Now()
+func (fs *FileScanner) newResolver() *statusResolver {
+	stagingRoot := fs.stagingRoot
+	if stagingRoot == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			return &statusResolver{}
+		}
+		stagingRoot = wd
+	}
+	return newStatusResolver(stagingRoot)
+}
 
-	// If modified in the last hour, mark as modified
-	if now.Sub(modTime) < time.Hour {
-		return StatusModified
+// statusResolver determines file sync status, preferring the staging area
+// and falling back to frontmatter when no staging index is available.
+type statusResolver struct {
+	area     *staging.StagingArea
+	statuses map[string]staging.FileStatus
+}
+
+func newStatusResolver(stagingRoot string) *statusResolver {
+	indexPath := filepath.Join(stagingRoot, staging.StagingDir, staging.IndexFile)
+	if _, err := os.Stat(indexPath); err != nil {
+		return &statusResolver{}
 	}
 
-	// Otherwise assume synced (we'd need actual sync metadata for accuracy)
-	return StatusSynced
+	area := staging.NewStagingArea(stagingRoot)
+	statuses, err := area.GetStatus()
+	if err != nil {
+		return &statusResolver{}
+	}
+	return &statusResolver{area: area, statuses: statuses}
+}
+
+// status returns the display status for the markdown file at path.
+func (r *statusResolver) status(path string) SyncStatus {
+	if r.area != nil {
+		key := r.area.NormalizePath(path)
+		if !isOutsideRoot(key) {
+			st, changed := r.statuses[key]
+			if !changed {
+				// Tracked and unmodified.
+				return StatusSynced
+			}
+			return stagingToSyncStatus(st)
+		}
+	}
+	return frontmatterStatus(path)
+}
+
+// isOutsideRoot reports whether a normalised staging key points outside the
+// staging root (or could not be made relative to it).
+func isOutsideRoot(key string) bool {
+	return key == ".." || strings.HasPrefix(key, "../") || filepath.IsAbs(key)
+}
+
+func stagingToSyncStatus(st staging.FileStatus) SyncStatus {
+	switch st {
+	case staging.StatusModified:
+		return StatusModified
+	case staging.StatusUnmodified:
+		return StatusSynced
+	default:
+		// New (untracked), staged, or unknown: not yet synced.
+		return StatusPending
+	}
+}
+
+// frontmatterStatus is the fallback without a staging index: a file that
+// has a notion_id has been synced at some point; one without has not.
+func frontmatterStatus(path string) SyncStatus {
+	if hasNotionID(path) {
+		return StatusSynced
+	}
+	return StatusPending
+}
+
+// hasNotionID reports whether the file's YAML frontmatter contains a
+// non-empty notion_id. Only the frontmatter block is read.
+func hasNotionID(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+
+	scanner := bufio.NewScanner(f)
+	if !scanner.Scan() || strings.TrimSpace(scanner.Text()) != "---" {
+		return false
+	}
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "---" {
+			return false
+		}
+		if strings.HasPrefix(line, "notion_id:") {
+			value := strings.Trim(strings.TrimSpace(strings.TrimPrefix(line, "notion_id:")), `"'`)
+			return value != ""
+		}
+	}
+	return false
 }
 
 // formatFileInfo formats file information for display
