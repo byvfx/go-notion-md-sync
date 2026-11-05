@@ -93,6 +93,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	engine := sync.NewEngine(cfg)
 	ctx, cancel := commandContext()
 	defer cancel()
+	defer markWrittenFilesSynced(engine, nil)
 
 	if dryRun {
 		util.Progress("DRY RUN: No actual changes will be made")

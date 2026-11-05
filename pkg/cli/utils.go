@@ -8,8 +8,44 @@ import (
 	"strings"
 
 	"github.com/byvfx/go-notion-md-sync/pkg/markdown"
+	"github.com/byvfx/go-notion-md-sync/pkg/staging"
 	"github.com/byvfx/go-notion-md-sync/pkg/sync"
 )
+
+// markWrittenFilesSynced records the files the engine wrote as in sync in
+// the staging index, so status doesn't list freshly pulled pages as new or
+// modified. With a nil stagingArea it uses the one in the current directory,
+// like status and add do. Files outside the staging root are ignored.
+func markWrittenFilesSynced(engine sync.Engine, stagingArea *staging.StagingArea) {
+	reporter, ok := engine.(sync.FileReporter)
+	if !ok {
+		return
+	}
+	files := reporter.WrittenFiles()
+	if len(files) == 0 {
+		return
+	}
+	if stagingArea == nil {
+		workingDir, err := os.Getwd()
+		if err != nil {
+			return
+		}
+		stagingArea = staging.NewStagingArea(workingDir)
+		if err := stagingArea.Initialize(); err != nil {
+			printVerbose("Warning: failed to initialize staging area: %v", err)
+			return
+		}
+	}
+	var inside []string
+	for _, f := range files {
+		if key := stagingArea.NormalizePath(f); key != ".." && !strings.HasPrefix(key, "../") {
+			inside = append(inside, f)
+		}
+	}
+	if err := stagingArea.MarkSynced(inside); err != nil {
+		printVerbose("Warning: failed to mark files as synced: %v", err)
+	}
+}
 
 // findMarkdownFiles recursively finds all markdown files in a directory
 func findMarkdownFiles(dir string) ([]string, error) {

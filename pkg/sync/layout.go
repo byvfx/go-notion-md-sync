@@ -238,7 +238,11 @@ func (e *engine) writeWithFrontmatter(path string, existing map[string]interface
 	for k, v := range updates {
 		merged[k] = v
 	}
-	return e.parser.CreateMarkdownWithFrontmatter(path, merged, content)
+	if err := e.parser.CreateMarkdownWithFrontmatter(path, merged, content); err != nil {
+		return err
+	}
+	e.recordWritten(path)
+	return nil
 }
 
 // readExisting returns the metadata of an existing Markdown file, or nil if

@@ -472,7 +472,7 @@ func createCodeBlock(code, language string) map[string]interface{} {
 	return map[string]interface{}{
 		"type": "code",
 		"code": map[string]interface{}{
-			"rich_text": plainRichText(code),
+			"rich_text": codeRichText(code),
 			"language":  normalizeNotionLanguage(language),
 		},
 	}

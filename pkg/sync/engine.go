@@ -35,6 +35,44 @@ type engine struct {
 	createMu gosync.Mutex
 	// folderPages caches the Notion page for each local folder.
 	folderPages map[string]string
+
+	// written lists the Markdown files this engine wrote, each matching
+	// Notion right after it was written. See WrittenFiles.
+	writtenMu gosync.Mutex
+	written   []string
+}
+
+// FileReporter is implemented by engines that can say which Markdown files
+// they wrote. Every such file matched its Notion page when it was written, so
+// callers can record it as synced (for example in the staging index).
+type FileReporter interface {
+	WrittenFiles() []string
+}
+
+// WrittenFiles returns the absolute paths of the Markdown files written so
+// far (pulled pages, new pages' IDs, sync times after a push), without
+// duplicates.
+func (e *engine) WrittenFiles() []string {
+	e.writtenMu.Lock()
+	defer e.writtenMu.Unlock()
+	seen := make(map[string]bool, len(e.written))
+	var out []string
+	for _, p := range e.written {
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func (e *engine) recordWritten(path string) {
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+	e.writtenMu.Lock()
+	e.written = append(e.written, path)
+	e.writtenMu.Unlock()
 }
 
 func newEngine(cfg *config.Config, client notion.Client, workers int) *engine {
@@ -112,8 +150,13 @@ func (e *engine) pushExisting(ctx context.Context, doc *markdown.Document, fm *m
 	}
 
 	if remote, err := e.notion.GetPageBlocks(ctx, fm.NotionID); err == nil {
-		if remoteMD, err := e.converter.BlocksToMarkdown(remote); err == nil && !HasConflict(doc.Content, remoteMD) {
-			return e.updateTitle(ctx, fm)
+		if remoteMD, err := e.converter.BlocksToMarkdown(remote); err == nil {
+			if edited := editedKeptRegions(doc.Content, remoteMD); len(edited) > 0 {
+				util.Warning("%s: edits inside kept block(s) %s are not pushed; Notion keeps them as they are. Make those edits in Notion.", doc.FilePath, strings.Join(edited, ", "))
+			}
+			if !HasConflict(doc.Content, remoteMD) {
+				return e.updateTitle(ctx, fm)
+			}
 		}
 	}
 
@@ -283,6 +326,8 @@ func (e *engine) folderPageLocked(ctx context.Context, dir, root string, depth i
 		syncedAtKey:    syncedNow(),
 	}, ""); err != nil {
 		util.Warning("Created page %s for folder %s but could not write %s: %v", id, dir, ownFile, err)
+	} else {
+		e.recordWritten(ownFile)
 	}
 	e.folderPages[dir] = id
 	return id, nil

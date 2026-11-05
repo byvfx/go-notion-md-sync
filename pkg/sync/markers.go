@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -126,21 +127,7 @@ func fenceRun(s string) (byte, int) {
 // expressions, indexed by placeholder number.
 func preprocessMarkdown(content string, ph placeholders) (string, []string, []string) {
 	lines := strings.Split(content, "\n")
-
-	// Find region ends first, so an unclosed region is treated as a single
-	// marker instead of swallowing the rest of the file.
-	ends := map[string]int{}
-	{
-		var ft fenceTracker
-		for i, line := range lines {
-			if ft.update(line) {
-				continue
-			}
-			if m := endMarkerRe.FindStringSubmatch(line); m != nil {
-				ends[normalizeID(m[1])] = i
-			}
-		}
-	}
+	ends := regionEnds(lines)
 
 	var out []string
 	var anchors, maths []string
@@ -187,6 +174,71 @@ func preprocessMarkdown(content string, ph placeholders) (string, []string, []st
 		out = append(out, line)
 	}
 	return strings.Join(out, "\n"), anchors, maths
+}
+
+// regionEnds maps each region's normalized block ID to the line of its end
+// marker. Regions are matched to their ends first, so an unclosed region is
+// treated as a single marker instead of swallowing the rest of the file.
+func regionEnds(lines []string) map[string]int {
+	ends := map[string]int{}
+	var ft fenceTracker
+	for i, line := range lines {
+		if ft.update(line) {
+			continue
+		}
+		if m := endMarkerRe.FindStringSubmatch(line); m != nil {
+			ends[normalizeID(m[1])] = i
+		}
+	}
+	return ends
+}
+
+// keptRegions returns the content of each closed region, keyed by the
+// normalized block ID, with blank lines and surrounding spaces dropped so
+// only real edits make two copies differ.
+func keptRegions(content string) map[string]string {
+	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+	ends := regionEnds(lines)
+	regions := map[string]string{}
+	var ft fenceTracker
+	for i := 0; i < len(lines); i++ {
+		if ft.update(lines[i]) {
+			continue
+		}
+		m := markerRe.FindStringSubmatch(lines[i])
+		if m == nil || m[3] == "" {
+			continue
+		}
+		id := normalizeID(m[2])
+		end, ok := ends[id]
+		if !ok || end <= i {
+			continue
+		}
+		var body []string
+		for _, l := range lines[i+1 : end] {
+			if t := strings.TrimSpace(l); t != "" {
+				body = append(body, t)
+			}
+		}
+		regions[id] = strings.Join(body, "\n")
+		i = end
+	}
+	return regions
+}
+
+// editedKeptRegions returns the IDs of regions whose content in local differs
+// from the same region in remote. Push never uploads region content, so
+// those edits would be lost silently.
+func editedKeptRegions(local, remote string) []string {
+	remoteRegions := keptRegions(remote)
+	var edited []string
+	for id, body := range keptRegions(local) {
+		if r, ok := remoteRegions[id]; ok && r != body {
+			edited = append(edited, id)
+		}
+	}
+	sort.Strings(edited)
+	return edited
 }
 
 // collectMath reads a $$ ... $$ block starting at line i. It returns the

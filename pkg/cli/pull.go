@@ -97,6 +97,8 @@ func runPull(cmd *cobra.Command, args []string) error {
 	engine := sync.NewEngine(cfg)
 	ctx, cancel := commandContext()
 	defer cancel()
+	// Even after a partial failure, every file written matches Notion.
+	defer markWrittenFilesSynced(engine, nil)
 
 	// Pull specific page or all pages
 	if pullPageID != "" {

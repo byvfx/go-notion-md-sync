@@ -39,6 +39,8 @@ func TestConverter_RoundTripIsStable(t *testing.T) {
 		"callout":      "> 💡 an idea\n>\n> more inside",
 		"code":         "```go\nfmt.Println(\"$$ not math $$\")\n```",
 		"code fences":  "````\nhas ``` inside\n````",
+		"code newline": "```go\na()\n\n```",
+		"code blanks":  "```\n\nfirst\n\n\nlast\n\n\n```",
 		"table":        "| a | b\\|c |\n| --- | --- |\n| **1** | 2 |",
 		"toggle":       "<details>\n<summary>Open me</summary>\n\nhidden\n\n- item\n\n</details>",
 		"equation":     "$$\nE = mc^2\n$$",
@@ -80,6 +82,16 @@ func TestConverter_LongTextIsChunked(t *testing.T) {
 	code := toBlocks(t, "```\n"+strings.Repeat("x", 4100)+"\n```")
 	codeRT := code[0]["code"].(map[string]interface{})["rich_text"].([]map[string]interface{})
 	assert.Len(t, codeRT, 3)
+}
+
+// A Notion code block that ends in a line break must keep it through a pull
+// and a push.
+func TestConverter_CodeKeepsTrailingNewline(t *testing.T) {
+	blocks := toBlocks(t, "```js\na();\n\n```")
+	require.Len(t, blocks, 1)
+	rts := blocks[0]["code"].(map[string]interface{})["rich_text"].([]map[string]interface{})
+	require.Len(t, rts, 1)
+	assert.Equal(t, "a();\n", rts[0]["text"].(map[string]interface{})["content"])
 }
 
 func TestConverter_TablesNestRows(t *testing.T) {

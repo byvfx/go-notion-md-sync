@@ -195,6 +195,7 @@ func TestEndToEnd(t *testing.T) {
 		"Team Wiki/Ideas/Ideas.md",
 	}, e.files())
 	assert.Equal(t, 0, api.Writes, "pull must not change Notion")
+	assert.Contains(t, e.run("status"), "nothing to commit", "freshly pulled files must not show as new")
 
 	wiki := e.read("Team Wiki/Team Wiki.md")
 	for _, want := range []string{
@@ -276,6 +277,7 @@ func TestEndToEnd(t *testing.T) {
 	require.True(t, ok, "folder page created")
 	assert.Contains(t, api.SubPages(projects), "Launch")
 	assert.FileExists(t, e.path("Team Wiki/Projects/Projects.md"))
+	assert.NotContains(t, e.run("status"), "Projects", "a created folder page must not show as new")
 
 	// --- Content Notion is strict about: long text, deep nesting, tables,
 	// code containing $$, local links.
@@ -307,6 +309,7 @@ func TestEndToEnd(t *testing.T) {
 	assert.Equal(t, "Ideas v2", api.Title(ideas))
 	e.run("pull")
 	assert.Contains(t, e.read("Team Wiki/Ideas/Ideas.md"), "title: Ideas v2", "the file stays where it is")
+	assert.Contains(t, e.run("status"), "nothing to commit", "re-pulled files must not show as modified")
 
 	// --- Pull a single nested page by name.
 	require.NoError(t, os.Remove(e.path("Team Wiki/Meeting Notes/Q1 Planning/Q1 Planning.md")))

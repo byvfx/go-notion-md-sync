@@ -188,9 +188,24 @@ func buildRichText(runs []textRun) []map[string]interface{} {
 	return out
 }
 
-// plainRichText builds rich text for unformatted text (code blocks, captions).
+// plainRichText builds rich text for unformatted text (captions, toggle
+// summaries).
 func plainRichText(text string) []map[string]interface{} {
 	return buildRichText([]textRun{{text: text}})
+}
+
+// codeRichText builds rich text for a code block. Unlike plainRichText it
+// keeps trailing line breaks: they are part of the code, and pull writes them
+// back as blank lines before the closing fence.
+func codeRichText(code string) []map[string]interface{} {
+	out := []map[string]interface{}{}
+	if code == "" {
+		return out
+	}
+	for _, chunk := range chunkText(code, maxRichTextLength) {
+		out = append(out, richTextItem(chunk, textStyle{}))
+	}
+	return out
 }
 
 func richTextItem(content string, style textStyle) map[string]interface{} {

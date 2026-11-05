@@ -149,6 +149,9 @@ func performPush(cfg *config.Config, workingDir string, filesToPush []string, st
 	defer cancel()
 
 	results := pushFilesConcurrently(ctx, engine, workingDir, filesToPush)
+	// Folder pages created along the way are written by the engine but
+	// weren't in the list of files to push.
+	defer markWrittenFilesSynced(engine, stagingArea)
 
 	return processPushResults(results, stagingArea)
 }
