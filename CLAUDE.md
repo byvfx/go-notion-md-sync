@@ -81,6 +81,20 @@ notion-md-sync/
 └── Makefile
 ```
 
+## v0.17.0 Data Safety & Directory Layout Release
+
+### Sync model (read this before changing pkg/sync or pkg/notion)
+- **One layout everywhere**: each page is `Folder/Folder.md`, sub-pages in sub-folders. `planPaths` (pkg/sync/layout.go) decides paths for pull and bidirectional sync; files are matched to pages by `notion_id`, so moved files stay where the user put them.
+- **New files on push** go under the page of their folder (`parentForFileLocked` / `folderPageLocked`); missing folder pages are created and saved as `Folder/Folder.md`. Creating pages is serialised with `engine.createMu`.
+- **Block trees**: `GetPageBlocks` returns top-level blocks with nested `Children`; it never descends into `child_page` / `child_database` (issue #7).
+- **Kept blocks**: `notion.ShouldPreserveTree` decides which top-level blocks a push must never delete (sub-pages, databases, Notion-hosted images, non round-trip types, and anything containing them). The converter writes them as `<!-- notion:TYPE ID -->` marker lines (or `begin`/`end` regions); on push those become `notion.AnchorBlock` placeholders that position new content. Keep `IsPreservedBlock` and the converter's rendering in sync.
+- **Safe replace**: `UpdatePageBlocks` inserts new blocks first (with `after` anchors), deletes old ones only after success, and rolls back on failure. Appends respect 100 children / 1000 blocks / 2 nesting levels per request.
+- **Round trips**: Markdown produced by pull must convert back unchanged (`TestConverter_RoundTripIsStable`). Add a case there for any converter change.
+- **Tests**: `pkg/notion/fake_server_test.go` is an in-memory Notion API; `pkg/sync/memnotion_test.go` is an in-memory `notion.Client` for engine scenarios (`layout_test.go`).
+
+### Not wired in
+- `pkg/cache` and `pkg/concurrent` are not imported by the binary (check with `go list -deps ./cmd/notion-md-sync`). The speedups listed for v0.11.0 below were measured in their benchmarks, not in the CLI.
+
 ## v0.16.0 Code Quality & Maintenance Release (Complete)
 
 ### Code Quality & Cleanup
