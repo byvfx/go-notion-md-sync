@@ -24,7 +24,6 @@ type mockNotionClient struct {
 	getChildPagesFunc         func(ctx context.Context, parentID string) ([]notion.Page, error)
 	getAllDescendantPagesFunc func(ctx context.Context, parentID string) ([]notion.Page, error)
 	updatePagePropertiesFunc  func(ctx context.Context, pageID string, properties map[string]interface{}) (*notion.Page, error)
-	deletePageFunc            func(ctx context.Context, pageID string) error
 }
 
 func (m *mockNotionClient) UpdatePageProperties(ctx context.Context, pageID string, properties map[string]interface{}) (*notion.Page, error) {

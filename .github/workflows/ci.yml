@@ -38,8 +38,20 @@ jobs:
     - name: Get dependencies
       run: go mod download
 
-    - name: Run tests
-      run: go test -v ./...
+    - name: Check formatting
+      run: |
+        unformatted=$(gofmt -l .)
+        if [ -n "$unformatted" ]; then
+          echo "These files need gofmt:"
+          echo "$unformatted"
+          exit 1
+        fi
+
+    - name: Run go vet
+      run: go vet ./...
+
+    - name: Run tests (with race detector)
+      run: go test -race ./...
 
     - name: Run linter
       uses: golangci/golangci-lint-action@v6

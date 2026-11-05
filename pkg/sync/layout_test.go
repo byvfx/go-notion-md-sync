@@ -9,7 +9,6 @@ import (
 
 	"github.com/byvfx/go-notion-md-sync/pkg/config"
 	"github.com/byvfx/go-notion-md-sync/pkg/markdown"
-	"github.com/byvfx/go-notion-md-sync/pkg/notion"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -339,5 +338,3 @@ func TestRelinkMarkers(t *testing.T) {
 	})
 	assert.Equal(t, "[📄 A](<./A (1)/A (1).md>) "+markerComment("child_page", id)+"\ntext", out)
 }
-
-var _ = notion.AnchorBlockType

@@ -8,7 +8,17 @@
 
 A powerful CLI tool for synchronizing markdown files with Notion pages. Built with Go for fast, reliable bidirectional sync between your local markdown files and Notion workspace.
 
-## ✨ **What's New in v0.16.0**
+## ✨ **What's New in v0.17.0**
+
+🛡️ **No more data loss on push** - Sub-pages, databases and blocks Markdown can't express are never deleted; new content is uploaded before old content is removed, and a failed push leaves the page as it was  
+📁 **One folder layout everywhere** - `pull`, `push`, `sync` and `watch` all use the same `Page/Page.md` folders; new files are created under the page that matches their folder  
+🔗 **Sub-pages stay separate** - A page's file links to its sub-pages instead of including their content ([#7](https://github.com/byvfx/go-notion-md-sync/issues/7))  
+✍️ **Lossless formatting** - Bold, italic, links, code, nested lists, to-dos, tables and long text survive a pull → push round trip  
+🔑 **New token format** - `ntn_` integration tokens are accepted ([#6](https://github.com/byvfx/go-notion-md-sync/issues/6))  
+
+See [docs/releases/v0.17.0.md](docs/releases/v0.17.0.md) for the full list.
+
+### Previous: v0.16.0
 
 🔧 **Code Quality Release** - Enhanced codebase maintainability and cleanliness  
 🧹 **Zero Linting Issues** - All code passes golangci-lint without warnings  
@@ -312,6 +322,24 @@ This structure ensures:
 - Page names are preserved exactly as in Notion (including spaces)
 - The hierarchy mirrors your Notion workspace structure
 - Round-trip syncing is simplified with consistent naming
+
+**How files map to pages**
+
+- A file keeps its page through the `notion_id` in its frontmatter. If you move or rename a file, pull keeps writing to it where it is.
+- A new file (no `notion_id`) is created under the page of its folder: `Parent Page/Notes.md` and `Parent Page/Notes/Notes.md` both become sub-pages of *Parent Page*. A folder without a page file gets a new page named after the folder, saved as `Folder/Folder.md`.
+- Two sibling pages with the same title get separate folders (`Title (1a2b3c4d)`), so they never overwrite each other.
+- Files outside `markdown_root`, excluded paths and hidden folders (`.git`, `.notion-sync`) are not synced.
+
+**Sub-pages, databases and other Notion-only blocks**
+
+A page's file links to its sub-pages and exported databases instead of including their content:
+
+```markdown
+[📄 Meeting Notes](<./Meeting Notes/Meeting Notes.md>) <!-- notion:child_page 1e369015-c240-8021-a930-e3ee43ea0ef6 -->
+[🗃️ Tasks](./Tasks.csv) <!-- notion:child_database 1e369015-c240-8021-a930-e3ee43ea0ef7 -->
+```
+
+Blocks that Markdown can't express (columns, synced blocks, embeds, files, Notion-hosted images...) are written the same way, with a read-only copy of their text between `<!-- notion:... begin -->` and `<!-- notion:end ... -->` when they have content. On push these lines are not uploaded: they only mark where the kept block sits, so the text around it stays in place and the block itself is never touched. Edit those blocks in Notion; you can move the marker lines to reorder text around them.
 
 #### Push Markdown to Notion
 ```bash

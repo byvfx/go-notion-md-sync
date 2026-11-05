@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 	gosync "sync"
 	"time"
 
@@ -319,13 +318,4 @@ func fillPlainText(b *notion.Block) {
 	if b.Image != nil {
 		fillRichText(b.Image.Caption)
 	}
-}
-
-func sortedKeys(m map[string]string) []string {
-	var keys []string
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
