@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
@@ -35,6 +36,22 @@ func (cr *ConflictResolver) ResolveConflict(localContent, remoteContent, filePat
 	default:
 		return cr.resolveByDiff(localContent, remoteContent, filePath)
 	}
+}
+
+// ResolveConflictAt resolves a conflict like ResolveConflict, but with the
+// time the local file and the Notion page were last changed. The "newer"
+// strategy uses them to pick the most recent version; when a time is
+// unknown it falls back to showing a diff.
+func (cr *ConflictResolver) ResolveConflictAt(localContent, remoteContent, filePath string, localTime, remoteTime time.Time) (string, error) {
+	if cr.strategy == "newer" && !localTime.IsZero() && !remoteTime.IsZero() {
+		if localTime.After(remoteTime) {
+			fmt.Printf("Conflict in %s: local file is newer, keeping it\n", filePath)
+			return localContent, nil
+		}
+		fmt.Printf("Conflict in %s: Notion page is newer, keeping it\n", filePath)
+		return remoteContent, nil
+	}
+	return cr.ResolveConflict(localContent, remoteContent, filePath)
 }
 
 // resolveByNewer resolves conflict by choosing the newer version
@@ -181,7 +198,18 @@ func printInsertedLines(text string) {
 	}
 }
 
-// HasConflict checks if there's a conflict between local and remote content
+// HasConflict checks if there's a conflict between local and remote content.
+// Differences in line endings, trailing whitespace and surrounding blank
+// lines are ignored.
 func HasConflict(localContent, remoteContent string) bool {
-	return localContent != remoteContent
+	return normalizeContent(localContent) != normalizeContent(remoteContent)
+}
+
+func normalizeContent(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = strings.TrimRight(l, " \t")
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
 }

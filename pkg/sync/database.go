@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -89,6 +90,10 @@ func (ds *databaseSync) SyncNotionDatabaseToCSV(ctx context.Context, databaseID,
 		}
 	}
 
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return fmt.Errorf("failed to write CSV file: %w", err)
+	}
 	return nil
 }
 
@@ -219,11 +224,27 @@ func (ds *databaseSync) CreateDatabaseFromCSV(ctx context.Context, csvPath, pare
 // Helper functions
 
 func (ds *databaseSync) buildCSVHeader(properties map[string]notion.Property) []string {
-	var header []string
-	for name := range properties {
-		header = append(header, name)
+	return orderedPropertyNames(properties)
+}
+
+// orderedPropertyNames returns property names in a stable order: the title
+// property first, then the rest alphabetically. Go map order is random, so
+// without this the CSV columns would change on every export.
+func orderedPropertyNames(properties map[string]notion.Property) []string {
+	var title string
+	var rest []string
+	for name, prop := range properties {
+		if prop.Type == "title" && title == "" {
+			title = name
+			continue
+		}
+		rest = append(rest, name)
 	}
-	return header
+	sort.Strings(rest)
+	if title != "" {
+		return append([]string{title}, rest...)
+	}
+	return rest
 }
 
 func (ds *databaseSync) convertRowToCSV(row notion.DatabaseRow, header []string) []string {

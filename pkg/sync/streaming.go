@@ -55,23 +55,25 @@ func (sds *StreamingDatabaseSync) ExportToCSVStreaming(ctx context.Context, data
 	stream := sds.client.StreamDatabaseRows(ctx, databaseID)
 
 	rowCount := 0
-	errorCount := 0
-
 	for {
 		select {
 		case row, ok := <-stream.Rows():
 			if !ok {
-				// Channel closed, we're done
+				// The stream is finished; it may have stopped because of an error.
+				if err := stream.Err(); err != nil {
+					return fmt.Errorf("failed to export database after %d rows: %w", rowCount, err)
+				}
+				writer.Flush()
+				if err := writer.Error(); err != nil {
+					return fmt.Errorf("failed to write CSV file: %w", err)
+				}
 				util.Success("Successfully exported %d rows to %s", rowCount, csvPath)
 				return nil
 			}
 
-			// Convert row to CSV format and write immediately
-			csvRow := sds.buildCSVRow(row, database.Properties)
-			if err := writer.Write(csvRow); err != nil {
+			if err := writer.Write(sds.buildCSVRow(row, header)); err != nil {
 				return fmt.Errorf("failed to write CSV row: %w", err)
 			}
-
 			rowCount++
 
 			// Flush every 100 rows to ensure data is written
@@ -82,55 +84,30 @@ func (sds *StreamingDatabaseSync) ExportToCSVStreaming(ctx context.Context, data
 				}
 			}
 
-		case err := <-stream.Errors():
-			errorCount++
-			util.WithError(err, "Error while streaming database rows")
-
-			// If we get too many errors, fail the operation
-			if errorCount > 10 {
-				return fmt.Errorf("too many errors while streaming database: %w", err)
-			}
-
 		case <-ctx.Done():
 			return fmt.Errorf("context cancelled while exporting database: %w", ctx.Err())
 		}
 	}
 }
 
-// buildCSVHeader builds the CSV header from database properties
+// buildCSVHeader builds the CSV header: the row ID, then the database
+// properties in a stable order (title first).
 func (sds *StreamingDatabaseSync) buildCSVHeader(properties map[string]notion.Property) []string {
-	// Create a deterministic order by collecting property names
-	var header []string
-	header = append(header, "ID", "Title") // Standard fields first
-
-	for name := range properties {
-		if name != "title" && name != "Title" { // Avoid duplicates
-			header = append(header, name)
-		}
-	}
-
-	return header
+	return append([]string{"ID"}, orderedPropertyNames(properties)...)
 }
 
-// buildCSVRow builds a CSV row from a database row
-func (sds *StreamingDatabaseSync) buildCSVRow(dbRow notion.DatabaseRow, properties map[string]notion.Property) []string {
-	row := []string{dbRow.ID}
-
-	// Extract title from property value
-	title := "Untitled"
-	if titleProp, ok := dbRow.Properties["title"]; ok {
-		title = sds.extractPropertyValueFromPropertyValue(titleProp)
-	}
-	row = append(row, title)
-
-	// Add other properties in the same order as header
-	for name := range properties {
-		if name != "title" && name != "Title" {
-			value := sds.extractPropertyValueFromPropertyValue(dbRow.Properties[name])
-			row = append(row, value)
+// buildCSVRow builds a CSV row whose values line up with header.
+func (sds *StreamingDatabaseSync) buildCSVRow(dbRow notion.DatabaseRow, header []string) []string {
+	row := make([]string, len(header))
+	for i, name := range header {
+		if i == 0 {
+			row[i] = dbRow.ID
+			continue
+		}
+		if prop, ok := dbRow.Properties[name]; ok {
+			row[i] = sds.extractPropertyValueFromPropertyValue(prop)
 		}
 	}
-
 	return row
 }
 
