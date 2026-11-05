@@ -69,10 +69,17 @@ func (p *markdownParser) ParseFile(filePath string) (*Document, error) {
 	if len(metaData) > 0 {
 		// Remove frontmatter from raw content
 		lines := bytes.Split(content, []byte("\n"))
-		if len(lines) > 0 && bytes.Equal(lines[0], []byte("---")) {
+		// Accept Windows line endings and a UTF-8 byte order mark.
+		isFence := func(line []byte) bool {
+			return bytes.Equal(bytes.TrimRight(line, "\r \t"), []byte("---"))
+		}
+		if len(lines) > 0 {
+			lines[0] = bytes.TrimPrefix(lines[0], []byte("\xef\xbb\xbf"))
+		}
+		if len(lines) > 0 && isFence(lines[0]) {
 			// Find the closing ---
 			for i := 1; i < len(lines); i++ {
-				if bytes.Equal(lines[i], []byte("---")) {
+				if isFence(lines[i]) {
 					if i+1 < len(lines) {
 						rawContent = string(bytes.Join(lines[i+1:], []byte("\n")))
 					} else {
