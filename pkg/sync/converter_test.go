@@ -449,13 +449,10 @@ func TestConverter_BlocksToMarkdown(t *testing.T) {
 					Type: "bookmark",
 					Bookmark: &notion.BookmarkBlock{
 						URL: "https://example.com",
-						Caption: []notion.RichText{
-							{PlainText: "Example website"},
-						},
 					},
 				},
 			},
-			want:    "[Example website](https://example.com)",
+			want:    "<https://example.com>",
 			wantErr: false,
 		},
 		{

@@ -469,3 +469,25 @@ func TestRewritingFrontmatterDoesNotAddBlankLines(t *testing.T) {
 	}
 	assert.Contains(t, readFile(t, path), "---\n\nedit three", "exactly one blank line after the frontmatter")
 }
+
+func TestPull_DoesNotOverwriteUnpushedDraft(t *testing.T) {
+	mem, e, root := workspace(t)
+	ctx := context.Background()
+	require.NoError(t, e.SyncAll(ctx, "pull"))
+
+	// A local draft (no notion_id yet) sits where a new Notion page would go.
+	draft := filepath.Join(root, "Root", "Notes", "Notes.md")
+	require.NoError(t, os.MkdirAll(filepath.Dir(draft), 0755))
+	require.NoError(t, os.WriteFile(draft, []byte("my unpushed draft"), 0644))
+	newID := mem.addPage(e.config.Notion.ParentPageID, "Notes", paraBlock("from notion"))
+
+	require.NoError(t, e.SyncAll(ctx, "pull"))
+	assert.Equal(t, "my unpushed draft", readFile(t, draft))
+	var found bool
+	for _, f := range listMarkdown(t, root) {
+		if strings.Contains(readFile(t, filepath.Join(root, f)), "notion_id: "+newID) {
+			found = true
+		}
+	}
+	assert.True(t, found, "the Notion page is pulled to another file")
+}

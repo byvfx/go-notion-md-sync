@@ -115,11 +115,13 @@ type Block struct {
 type RichTextBlock struct {
 	RichText     []RichText `json:"rich_text"`
 	IsToggleable bool       `json:"is_toggleable,omitempty"`
+	Color        string     `json:"color,omitempty"`
 }
 
 type ToDoBlock struct {
 	RichText []RichText `json:"rich_text"`
 	Checked  bool       `json:"checked"`
+	Color    string     `json:"color,omitempty"`
 }
 
 type ChildPageBlock struct {
@@ -257,6 +259,7 @@ type CalloutIcon struct {
 
 type ToggleBlock struct {
 	RichText []RichText `json:"rich_text"`
+	Color    string     `json:"color,omitempty"`
 }
 
 type BookmarkBlock struct {

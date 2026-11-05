@@ -38,6 +38,7 @@ func NewConverter() Converter {
 
 // pushState carries the placeholders found while preprocessing.
 type pushState struct {
+	ph      placeholders
 	anchors []string
 	maths   []string
 }
@@ -47,12 +48,13 @@ type pushState struct {
 // "children". The result may contain notion.AnchorBlock placeholders.
 func (c *converter) MarkdownToBlocks(content string) ([]map[string]interface{}, error) {
 	content = strings.ReplaceAll(content, "\r\n", "\n")
-	content, anchors, maths := preprocessMarkdown(content)
+	ph := newPlaceholders()
+	content, anchors, maths := preprocessMarkdown(content, ph)
 
 	source := []byte(content)
 	doc := c.md.Parser().Parse(text.NewReader(source))
 
-	st := &pushState{anchors: anchors, maths: maths}
+	st := &pushState{ph: ph, anchors: anchors, maths: maths}
 	blocks := c.convertChildren(doc, source, st, true)
 	if blocks == nil {
 		blocks = []map[string]interface{}{}
@@ -125,13 +127,13 @@ func (c *converter) convertRange(first, stop ast.Node, source []byte, st *pushSt
 func (c *converter) convertParagraph(n ast.Node, source []byte, st *pushState, topLevel bool) map[string]interface{} {
 	plain := strings.TrimSpace(plainText(n, source))
 
-	if i := placeholderIndex(plain, anchorPlaceholderPrefix); i >= 0 && i < len(st.anchors) {
+	if i := placeholderIndex(plain, st.ph.anchor); i >= 0 && i < len(st.anchors) {
 		if topLevel {
 			return notion.AnchorBlock(st.anchors[i])
 		}
 		return nil // Kept blocks can only be positioned at the top level.
 	}
-	if i := placeholderIndex(plain, mathPlaceholderPrefix); i >= 0 && i < len(st.maths) {
+	if i := placeholderIndex(plain, st.ph.math); i >= 0 && i < len(st.maths) {
 		return createEquationBlock(st.maths[i])
 	}
 

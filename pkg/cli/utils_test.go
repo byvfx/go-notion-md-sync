@@ -240,3 +240,17 @@ title: Test Page
 		})
 	}
 }
+
+func TestRunSync_DryRunCreatesNothing(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(cfgPath, []byte("notion:\n  token: ntn_test_token_123456\n  parent_page_id: 1e369015c2408021a930e3ee43ea0ef6\ndirectories:\n  markdown_root: ./docs\n"), 0644))
+	target := filepath.Join(dir, "new-folder")
+
+	oldCfg, oldDir, oldDry, oldDirection := configPath, syncDirectory, dryRun, syncDirection
+	defer func() { configPath, syncDirectory, dryRun, syncDirection = oldCfg, oldDir, oldDry, oldDirection }()
+	configPath, syncDirectory, dryRun, syncDirection = cfgPath, target, true, "pull"
+
+	require.NoError(t, runSync(syncCmd, nil))
+	assert.NoDirExists(t, target, "a dry run must not create directories")
+}

@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -221,4 +222,46 @@ func TestConverter_MarkerLookalikesAreText(t *testing.T) {
 	// Generated stand-ins with escaped backticks still count.
 	line := "[📄 a\\`b](./a_b/a_b.md) " + markerComment("child_page", id)
 	assert.Equal(t, notion.AnchorBlockType, toBlocks(t, line)[0]["type"])
+}
+
+func TestConverter_KeepsSettingsMarkdownCannotExpress(t *testing.T) {
+	row := notion.Block{Type: "table_row", TableRow: &notion.TableRowBlock{Cells: [][]notion.RichText{{{Type: "text", PlainText: "a"}}}}}
+	colored := notion.RichText{Type: "text", PlainText: "red", Annotations: &notion.Annotations{Color: "red"}}
+	cases := map[string]notion.Block{
+		"table without header":  {Type: "table", Table: &notion.TableBlock{TableWidth: 1, HasColumnHeader: false}, Children: []notion.Block{row}},
+		"table with row header": {Type: "table", Table: &notion.TableBlock{TableWidth: 1, HasColumnHeader: true, HasRowHeader: true}, Children: []notion.Block{row}},
+		"captioned bookmark":    {Type: "bookmark", Bookmark: &notion.BookmarkBlock{URL: "https://x.com", Caption: []notion.RichText{{Type: "text", PlainText: "cap"}}}},
+		"colored text":          {Type: "paragraph", Paragraph: &notion.RichTextBlock{RichText: []notion.RichText{colored}}},
+		"colored block":         {Type: "paragraph", Paragraph: &notion.RichTextBlock{RichText: []notion.RichText{{Type: "text", PlainText: "x"}}, Color: "blue_background"}},
+	}
+	for name, b := range cases {
+		t.Run(name, func(t *testing.T) {
+			assert.True(t, notion.ShouldPreserveTree(&b))
+		})
+	}
+	plain := notion.Block{Type: "table", Table: &notion.TableBlock{TableWidth: 1, HasColumnHeader: true}, Children: []notion.Block{row}}
+	assert.False(t, notion.ShouldPreserveTree(&plain), "ordinary tables still round-trip")
+	callout := notion.Block{Type: "callout", Callout: &notion.CalloutBlock{Color: "gray_background"}}
+	assert.False(t, notion.ShouldPreserveTree(&callout), "the default callout color is not a custom color")
+}
+
+func TestConverter_PlaceholderLookalikesStayText(t *testing.T) {
+	id := "11111111-2222-3333-4444-555555555555"
+	md := "NOTION_ANCHOR_0\n\nNOTION_MATH_0\n\n[📄 A](./A/A.md) " + markerComment("child_page", id) + "\n\n$$\nx\n$$"
+	var types []string
+	for _, b := range toBlocks(t, md) {
+		types = append(types, b["type"].(string))
+	}
+	assert.Equal(t, []string{"paragraph", "paragraph", notion.AnchorBlockType, "equation"}, types)
+}
+
+func TestConverter_MathInIndentedCodeIsCode(t *testing.T) {
+	blocks := toBlocks(t, "text\n\n    $$\n    literal\n    $$")
+	require.Len(t, blocks, 2)
+	assert.Equal(t, "code", blocks[1]["type"])
+
+	// Inside a list the indentation belongs to the item, so it is math.
+	nested := toBlocks(t, "- item\n  - sub\n\n    $$\n    x^2\n    $$")
+	require.Len(t, nested, 1)
+	assert.Contains(t, fmt.Sprint(nested), "equation")
 }

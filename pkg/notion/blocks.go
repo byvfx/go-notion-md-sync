@@ -57,16 +57,57 @@ func IsPreservedBlock(b *Block) bool {
 			return true
 		}
 	}
-	// Mentions (pages, people, dates) and inline equations would come back
-	// as plain text.
+	// Mentions (pages, people, dates), inline equations and colored text
+	// would come back as plain text.
 	for _, rts := range richTextsOf(b) {
 		for _, rt := range rts {
 			if rt.Type != "" && rt.Type != "text" {
 				return true
 			}
+			if rt.Annotations != nil && !isDefaultColor(rt.Annotations.Color) {
+				return true
+			}
 		}
 	}
+	// Block colors have no Markdown form either.
+	if !isDefaultColor(blockColor(b)) {
+		return true
+	}
+	// Markdown tables always have a header row and no row header.
+	if b.Type == "table" && b.Table != nil && (!b.Table.HasColumnHeader || b.Table.HasRowHeader) {
+		return true
+	}
+	// A bookmark's caption would come back as an ordinary link.
+	if b.Type == "bookmark" && b.Bookmark != nil && len(b.Bookmark.Caption) > 0 {
+		return true
+	}
 	return false
+}
+
+func isDefaultColor(c string) bool {
+	return c == "" || c == "default"
+}
+
+// blockColor returns a block's own color setting. A callout's usual gray
+// background counts as default, since that is what Notion gives new callouts.
+func blockColor(b *Block) string {
+	for _, r := range []*RichTextBlock{b.Paragraph, b.Heading1, b.Heading2, b.Heading3, b.BulletedListItem, b.NumberedListItem, b.Quote} {
+		if r != nil {
+			return r.Color
+		}
+	}
+	switch {
+	case b.ToDo != nil:
+		return b.ToDo.Color
+	case b.Toggle != nil:
+		return b.Toggle.Color
+	case b.Callout != nil:
+		if b.Callout.Color == "gray_background" {
+			return ""
+		}
+		return b.Callout.Color
+	}
+	return ""
 }
 
 // IsRoundTripType reports whether blocks of this type can normally be

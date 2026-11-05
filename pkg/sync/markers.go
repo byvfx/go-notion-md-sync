@@ -1,6 +1,8 @@
 package sync
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strings"
@@ -34,10 +36,25 @@ var (
 	endMarkerRe  = regexp.MustCompile(`^ {0,3}<!--\s*notion:end\s+(` + notionIDPattern + `)\s*-->\s*$`)
 )
 
-const (
-	anchorPlaceholderPrefix = "NOTION_ANCHOR_"
-	mathPlaceholderPrefix   = "NOTION_MATH_"
-)
+// Placeholder words stand in for anchors and equations while the Markdown is
+// parsed. Each conversion uses a fresh random token in them, so text a user
+// wrote can't be mistaken for one.
+type placeholders struct {
+	anchor, math string
+}
+
+func newPlaceholders() placeholders {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// Extremely unlikely; fall back to a fixed but unusual token.
+		copy(b[:], "nmsfixed")
+	}
+	token := hex.EncodeToString(b[:])
+	return placeholders{
+		anchor: "NOTIONANCHOR" + token + "N",
+		math:   "NOTIONMATH" + token + "N",
+	}
+}
 
 func markerComment(blockType, id string) string {
 	return fmt.Sprintf("<!-- notion:%s %s -->", blockType, id)
@@ -97,7 +114,7 @@ func fenceRun(s string) (byte, int) {
 // placeholders and display-math blocks ($$ on their own lines) with math
 // placeholders. It returns the new content, the anchor block IDs and the math
 // expressions, indexed by placeholder number.
-func preprocessMarkdown(content string) (string, []string, []string) {
+func preprocessMarkdown(content string, ph placeholders) (string, []string, []string) {
 	lines := strings.Split(content, "\n")
 
 	// Find region ends first, so an unclosed region is treated as a single
@@ -119,6 +136,7 @@ func preprocessMarkdown(content string) (string, []string, []string) {
 	var anchors, maths []string
 	var ft fenceTracker
 	skipUntil := -1
+	inList := false
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
 		if i <= skipUntil {
@@ -135,7 +153,7 @@ func preprocessMarkdown(content string) (string, []string, []string) {
 					skipUntil = end
 				}
 			}
-			out = append(out, "", fmt.Sprintf("%s%d", anchorPlaceholderPrefix, len(anchors)), "")
+			out = append(out, "", fmt.Sprintf("%s%d", ph.anchor, len(anchors)), "")
 			anchors = append(anchors, id)
 			continue
 		}
@@ -143,9 +161,14 @@ func preprocessMarkdown(content string) (string, []string, []string) {
 			continue
 		}
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "$$") {
+		if !isBlank(line) && !isIndentedCode(line, inList) {
+			inList = listItemRe.MatchString(line) || (inList && leadingSpaces(line) > 0)
+		}
+		if strings.HasPrefix(trimmed, "$$") && !isIndentedCode(line, inList) {
 			if expr, last, ok := collectMath(lines, i); ok {
-				out = append(out, "", fmt.Sprintf("%s%d", mathPlaceholderPrefix, len(maths)), "")
+				// Keep the indentation so math inside a list item stays there.
+				indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+				out = append(out, "", indent+fmt.Sprintf("%s%d", ph.math, len(maths)), "")
 				maths = append(maths, expr)
 				i = last
 				continue
@@ -186,6 +209,34 @@ func collectMath(lines []string, i int) (string, int, bool) {
 		parts = append(parts, lines[j])
 	}
 	return "", i, false
+}
+
+var listItemRe = regexp.MustCompile(`^ {0,3}([-*+]|[0-9]{1,9}[.)])(\s|$)`)
+
+func isBlank(line string) bool {
+	return strings.TrimSpace(line) == ""
+}
+
+func leadingSpaces(line string) int {
+	n := 0
+	for _, r := range line {
+		switch r {
+		case ' ':
+			n++
+		case '\t':
+			n += 4
+		default:
+			return n
+		}
+	}
+	return n
+}
+
+// isIndentedCode reports whether a line is (probably) part of an indented
+// code block: indented four or more spaces outside a list. Inside a list the
+// indentation belongs to the list item.
+func isIndentedCode(line string, inList bool) bool {
+	return !inList && leadingSpaces(line) >= 4
 }
 
 func normalizeID(id string) string {

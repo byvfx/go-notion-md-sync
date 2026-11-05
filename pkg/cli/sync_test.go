@@ -150,7 +150,7 @@ func TestPerformDryRun(t *testing.T) {
 			workingDir: filepath.Join(tempDir, "empty"),
 			direction:  "push",
 			checkOutput: func(t *testing.T, output string) {
-				// Note: This will fail to find files because directory doesn't exist
+				assert.Contains(t, output, "does not exist yet")
 			},
 		},
 	}
@@ -173,14 +173,9 @@ func TestPerformDryRun(t *testing.T) {
 			n, _ := r.Read(buf)
 			output := string(buf[:n])
 
-			if tt.name == "dry run empty directory" {
-				// Special case: error expected
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				if tt.checkOutput != nil {
-					tt.checkOutput(t, output)
-				}
+			assert.NoError(t, err)
+			if tt.checkOutput != nil {
+				tt.checkOutput(t, output)
 			}
 		})
 	}

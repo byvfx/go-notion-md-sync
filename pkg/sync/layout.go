@@ -133,7 +133,10 @@ func (e *engine) planPaths(pages []notion.Page, local map[string]string) *pagePl
 			if err != nil {
 				p = filepath.Join(root, "untitled", "untitled.md")
 			}
-			if !taken[pathKey(p)] || n > 100 {
+			// A file already on disk here belongs to another page or is an
+			// unpushed draft (this page's own file was found by notion_id
+			// above): never plan to overwrite it.
+			if (!taken[pathKey(p)] && !fileExists(p)) || n > 100 {
 				path = p
 				break
 			}
@@ -146,6 +149,11 @@ func (e *engine) planPaths(pages []notion.Page, local map[string]string) *pagePl
 		resolve(normalizeID(pages[i].ID), 0)
 	}
 	return plan
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }
 
 // pathKey compares paths case-insensitively, as macOS and Windows do.

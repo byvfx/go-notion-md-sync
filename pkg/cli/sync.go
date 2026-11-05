@@ -59,12 +59,23 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if workingDir == "" {
 		workingDir = cfg.Directories.MarkdownRoot
 	}
-	if syncDirection == "push" && syncFile == "" {
-		if info, err := os.Stat(workingDir); err != nil || !info.IsDir() {
-			return fmt.Errorf("invalid working directory: %s is not a directory", workingDir)
-		}
-	} else if err := util.EnsureDirectory(workingDir, "directory"); err != nil {
+	if err := util.ValidateUserPath(workingDir, "directory"); err != nil {
 		return fmt.Errorf("invalid working directory: %w", err)
+	}
+	switch {
+	case syncDirection == "push" || dryRun:
+		// Nothing to create: pushing needs existing files, and a dry run
+		// must not change anything. A missing directory is fine for a dry
+		// run (it would be created).
+		if info, err := os.Stat(workingDir); err == nil && !info.IsDir() {
+			return fmt.Errorf("invalid working directory: %s is not a directory", workingDir)
+		} else if err != nil && !dryRun {
+			return fmt.Errorf("invalid working directory: %s does not exist", workingDir)
+		}
+	default:
+		if err := util.EnsureDirectory(workingDir, "directory"); err != nil {
+			return fmt.Errorf("invalid working directory: %w", err)
+		}
 	}
 
 	// Validate specific file if provided
@@ -110,6 +121,11 @@ func syncSingleFile(ctx context.Context, engine sync.Engine, filePath, direction
 func performDryRun(ctx context.Context, workingDir, specificFile, direction string) error {
 	if specificFile != "" {
 		fmt.Printf("Would sync file: %s (%s)\n", specificFile, direction)
+		return nil
+	}
+
+	if _, err := os.Stat(workingDir); os.IsNotExist(err) {
+		fmt.Printf("%s does not exist yet; it would be created and all pages %s.\n", workingDir, getActionVerb(direction))
 		return nil
 	}
 
