@@ -95,12 +95,20 @@ func TestTunedClients_UseProxyFromEnvironment(t *testing.T) {
 			if (wantErr == nil) != (gotErr == nil) {
 				t.Fatalf("Proxy() error = %v, want %v", gotErr, wantErr)
 			}
-			if want.String() != got.String() {
-				t.Errorf("Proxy() = %v, want %v", got, want)
+			// Either may be nil (no proxy configured).
+			if urlString(want) != urlString(got) {
+				t.Errorf("Proxy() = %q, want %q", urlString(got), urlString(want))
 			}
 			if transport.TLSClientConfig != nil && transport.TLSClientConfig.InsecureSkipVerify {
 				t.Error("TLS verification must stay enabled")
 			}
 		})
 	}
+}
+
+func urlString(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
+	return u.String()
 }
