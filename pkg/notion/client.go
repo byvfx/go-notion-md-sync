@@ -12,12 +12,13 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	gosync "sync"
 	"time"
 )
 
 const (
 	BaseURL        = "https://api.notion.com/v1"
-	NotionVersion  = "2022-06-28"
+	NotionVersion  = "2026-03-11"
 	DefaultTimeout = 30 * time.Second
 )
 
@@ -54,14 +55,20 @@ type client struct {
 	retryBaseDelay time.Duration
 	// deleteDelay is the pause between block deletions.
 	deleteDelay time.Duration
+	// dataSources caches the data source used for each database ID.
+	dataSources gosync.Map
 }
 
 // maxRetries is how many times a request is retried after a 429 or a
 // temporary server error.
 const maxRetries = 5
 
-// maxRetryAfter caps how long we honor a Retry-After header.
-const maxRetryAfter = 60 * time.Second
+// maxRetryAfter caps how long we honor a Retry-After header. Notion's
+// workspace-wide rate limit can ask for more than a minute.
+const maxRetryAfter = 5 * time.Minute
+
+// statusServiceOverload is Notion's "service_overload" status.
+const statusServiceOverload = 529
 
 // NotionAPIError is an error response from the Notion API.
 type NotionAPIError struct {
@@ -111,7 +118,7 @@ func NewClient(token string) Client {
 func isRetryableStatus(status int) bool {
 	switch status {
 	case http.StatusTooManyRequests, http.StatusConflict, http.StatusBadGateway,
-		http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		http.StatusServiceUnavailable, http.StatusGatewayTimeout, statusServiceOverload:
 		return true
 	}
 	return false
@@ -505,7 +512,7 @@ func (c *client) appendBlocks(ctx context.Context, parentID string, blocks []map
 
 		req := map[string]interface{}{"children": batch}
 		if after != "" {
-			req["after"] = after
+			req["position"] = afterBlock(after)
 		}
 		var resp BlocksResponse
 		if err := c.doJSON(ctx, "PATCH", "/blocks/"+parentID+"/children", req, &resp); err != nil {
@@ -552,6 +559,14 @@ func (c *client) appendBlocks(ctx context.Context, parentID string, blocks []map
 		}
 	}
 	return created, nil
+}
+
+// afterBlock is the append position that inserts right below block id.
+func afterBlock(id string) map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "after_block",
+		"after_block": map[string]interface{}{"id": id},
+	}
 }
 
 // locateCreated finds the IDs of n newly created blocks in a list of blocks:
@@ -629,9 +644,9 @@ func (c *client) deleteBlocks(ctx context.Context, ids []string) {
 }
 
 func (c *client) DeletePage(ctx context.Context, pageID string) error {
-	// Archive the page (Notion doesn't allow true deletion)
+	// Move the page to the trash (Notion doesn't allow true deletion).
 	updateReq := map[string]interface{}{
-		"archived": true,
+		"in_trash": true,
 	}
 	if err := c.doJSON(ctx, "PATCH", "/pages/"+pageID, updateReq, nil); err != nil {
 		return fmt.Errorf("failed to delete page %s: %w", pageID, withPageID(err, pageID))
@@ -697,7 +712,7 @@ func (c *client) GetChildPages(ctx context.Context, parentID string) ([]Page, er
 			fmt.Fprintf(os.Stderr, "Warning: skipping sub-page %s: %v\n", block.ID, err)
 			continue
 		}
-		if page.Archived || page.InTrash {
+		if page.InTrash {
 			continue
 		}
 		pages = append(pages, *page)
@@ -737,34 +752,106 @@ func (c *client) GetAllDescendantPages(ctx context.Context, parentID string) ([]
 
 // Database methods
 
+//
+// The methods take database IDs, which is what child_database blocks and
+// links carry. Rows and the schema live in the database's data source, so
+// each database is resolved to its first data source; a database with more
+// than one is synced through its first one, with a warning.
+
+// GetDatabase returns a database with the schema of its data source in
+// Properties.
 func (c *client) GetDatabase(ctx context.Context, databaseID string) (*Database, error) {
+	database, err := c.getDatabase(ctx, databaseID)
+	if err != nil {
+		return nil, err
+	}
+	dsID, err := c.dataSourceID(ctx, databaseID)
+	if err != nil {
+		return nil, err
+	}
+	var ds DataSource
+	if err := c.doJSON(ctx, "GET", "/data_sources/"+dsID, nil, &ds); err != nil {
+		return nil, fmt.Errorf("failed to get data source of database %s: %w", databaseID, err)
+	}
+	database.Properties = ds.Properties
+	return database, nil
+}
+
+func (c *client) getDatabase(ctx context.Context, databaseID string) (*Database, error) {
 	var database Database
 	if err := c.doJSON(ctx, "GET", "/databases/"+databaseID, nil, &database); err != nil {
 		return nil, fmt.Errorf("failed to get database: %w", err)
 	}
+	c.rememberDataSource(&database)
 	return &database, nil
 }
 
+// rememberDataSource caches the data source a database is synced through.
+func (c *client) rememberDataSource(database *Database) {
+	if len(database.DataSources) == 0 {
+		return
+	}
+	if _, loaded := c.dataSources.LoadOrStore(database.ID, database.DataSources[0].ID); !loaded && len(database.DataSources) > 1 {
+		fmt.Fprintf(os.Stderr, "Warning: database %s has %d data sources; only the first (%q) is synced\n",
+			database.ID, len(database.DataSources), database.DataSources[0].Name)
+	}
+}
+
+// dataSourceID returns the data source used for a database.
+func (c *client) dataSourceID(ctx context.Context, databaseID string) (string, error) {
+	if id, ok := c.dataSources.Load(databaseID); ok {
+		return id.(string), nil
+	}
+	database, err := c.getDatabase(ctx, databaseID)
+	if err != nil {
+		return "", err
+	}
+	id, ok := c.dataSources.Load(database.ID)
+	if !ok {
+		return "", fmt.Errorf("database %s has no data source", databaseID)
+	}
+	if database.ID != databaseID {
+		c.dataSources.Store(databaseID, id)
+	}
+	return id.(string), nil
+}
+
 func (c *client) QueryDatabase(ctx context.Context, databaseID string, request *DatabaseQueryRequest) (*DatabaseQueryResponse, error) {
+	dsID, err := c.dataSourceID(ctx, databaseID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query database: %w", err)
+	}
 	var queryResp DatabaseQueryResponse
-	if err := c.doJSON(ctx, "POST", "/databases/"+databaseID+"/query", request, &queryResp); err != nil {
+	if err := c.doJSON(ctx, "POST", "/data_sources/"+dsID+"/query", request, &queryResp); err != nil {
 		return nil, fmt.Errorf("failed to query database: %w", err)
 	}
 	return &queryResp, nil
 }
 
 func (c *client) CreateDatabase(ctx context.Context, request *CreateDatabaseRequest) (*Database, error) {
+	// The schema goes to the database's first data source.
+	payload := map[string]interface{}{
+		"parent":              request.Parent,
+		"title":               request.Title,
+		"initial_data_source": map[string]interface{}{"properties": request.Properties},
+	}
 	var database Database
-	if err := c.doJSON(ctx, "POST", "/databases", request, &database); err != nil {
+	if err := c.doJSON(ctx, "POST", "/databases", payload, &database); err != nil {
 		return nil, fmt.Errorf("failed to create database: %w", err)
 	}
+	c.rememberDataSource(&database)
 	return &database, nil
 }
 
 func (c *client) CreateDatabaseRow(ctx context.Context, databaseID string, properties map[string]PropertyValue) (*DatabaseRow, error) {
+	dsID, err := c.dataSourceID(ctx, databaseID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create database row: %w", err)
+	}
 	payload := map[string]interface{}{
 		"parent": map[string]interface{}{
-			"database_id": databaseID,
+			"type":           "data_source_id",
+			"data_source_id": dsID,
 		},
 		"properties": properties,
 	}

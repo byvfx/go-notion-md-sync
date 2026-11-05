@@ -359,7 +359,7 @@ func TestClient_DeletePage(t *testing.T) {
 		wantErr      bool
 	}{
 		{
-			name:         "successful deletion (archive)",
+			name:         "successful deletion (trash)",
 			pageID:       "test-page-id",
 			serverStatus: http.StatusOK,
 			wantErr:      false,
@@ -381,7 +381,7 @@ func TestClient_DeletePage(t *testing.T) {
 				body, _ := io.ReadAll(r.Body)
 				var req map[string]interface{}
 				_ = json.Unmarshal(body, &req)
-				assert.Equal(t, true, req["archived"])
+				assert.Equal(t, true, req["in_trash"])
 
 				w.WriteHeader(tt.serverStatus)
 				if tt.serverStatus != http.StatusOK {

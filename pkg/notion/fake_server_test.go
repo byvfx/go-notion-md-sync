@@ -197,7 +197,15 @@ func (f *fakeNotion) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		var req map[string]interface{}
 		_ = json.NewDecoder(r.Body).Decode(&req)
-		after, _ := req["after"].(string)
+		if _, ok := req["after"]; ok {
+			fail(400, "body.after is not supported in this API version; use body.position")
+			return
+		}
+		after := ""
+		if pos, ok := req["position"].(map[string]interface{}); ok && pos["type"] == "after_block" {
+			ab, _ := pos["after_block"].(map[string]interface{})
+			after, _ = ab["id"].(string)
+		}
 		kids, _ := req["children"].([]interface{})
 		total := 0
 		var count func([]interface{})

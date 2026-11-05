@@ -7,6 +7,10 @@
 // at most 100 children per array and 1000 blocks per request, two levels of
 // nesting, table rows nested under their table, 2000 characters per rich
 // text item, valid link URLs) so tests fail where the real API would.
+//
+// It speaks API version 2026-03-11 only: databases are read through data
+// sources, appends are positioned with "position", and pages are trashed
+// with "in_trash". Requests in the older shapes fail as they would there.
 package notionfake
 
 import (
@@ -22,14 +26,17 @@ import (
 	"unicode/utf16"
 )
 
+// Version is the only Notion-Version the fake accepts.
+const Version = "2026-03-11"
+
 // Server is a fake Notion API.
 type Server struct {
 	*httptest.Server
 
 	mu       sync.Mutex
-	objects  map[string]map[string]interface{} // pages, blocks and databases by ID
+	objects  map[string]map[string]interface{} // pages, blocks, databases and data sources by ID
 	children map[string][]string               // parent ID -> ordered child block IDs
-	rows     map[string][]string               // database ID -> row page IDs
+	rows     map[string][]string               // data source ID -> row page IDs
 	nextID   int
 	clock    time.Time
 
@@ -121,9 +128,15 @@ func (s *Server) AddDatabase(page, title string, columns []string, rows []map[st
 	for _, c := range columns {
 		props[c] = map[string]interface{}{"id": c, "type": "rich_text", "rich_text": map[string]interface{}{}}
 	}
+	dsID := s.newIDLocked()
 	s.objects[id] = map[string]interface{}{
-		"object": "database", "id": id, "title": Text(title), "properties": props,
-		"parent": map[string]interface{}{"type": "page_id", "page_id": page},
+		"object": "database", "id": id, "title": Text(title),
+		"parent":       map[string]interface{}{"type": "page_id", "page_id": page},
+		"data_sources": []interface{}{map[string]interface{}{"id": dsID, "name": title}},
+	}
+	s.objects[dsID] = map[string]interface{}{
+		"object": "data_source", "id": dsID, "title": Text(title), "properties": props,
+		"parent": map[string]interface{}{"type": "database_id", "database_id": id},
 	}
 	// The child_database block has the database's ID.
 	block := map[string]interface{}{"object": "block", "id": id, "type": "child_database", "child_database": map[string]interface{}{"title": title}}
@@ -136,8 +149,8 @@ func (s *Server) AddDatabase(page, title string, columns []string, rows []map[st
 			rp[c] = map[string]interface{}{"type": "rich_text", "rich_text": Text(r[c])}
 		}
 		s.objects[rowID] = map[string]interface{}{"object": "page", "id": rowID, "properties": rp,
-			"parent": map[string]interface{}{"type": "database_id", "database_id": id}}
-		s.rows[id] = append(s.rows[id], rowID)
+			"parent": map[string]interface{}{"type": "data_source_id", "data_source_id": dsID}}
+		s.rows[dsID] = append(s.rows[dsID], rowID)
 	}
 	return id
 }
@@ -198,22 +211,23 @@ func (s *Server) Title(page string) string {
 	return titleOf(s.objects[page])
 }
 
-// Archived reports whether a page is archived (in the trash).
-func (s *Server) Archived(page string) bool {
+// InTrash reports whether a page is in the trash.
+func (s *Server) InTrash(page string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	a, _ := s.objects[page]["archived"].(bool)
+	a, _ := s.objects[page]["in_trash"].(bool)
 	return a
 }
 
-// SubPages returns the titles of a page's (non-archived) sub-pages, in order.
+// SubPages returns the titles of a page's sub-pages that are not in the
+// trash.
 func (s *Server) SubPages(page string) map[string]string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := map[string]string{}
 	for _, c := range s.children[page] {
 		if s.blockLocked(c)["type"] == "child_page" {
-			if a, _ := s.objects[c]["archived"].(bool); !a {
+			if a, _ := s.objects[c]["in_trash"].(bool); !a {
 				out[titleOf(s.objects[c])] = c
 			}
 		}
@@ -349,7 +363,7 @@ func (s *Server) addPageLocked(parent, props map[string]interface{}, title strin
 	now := s.tickLocked()
 	s.objects[id] = map[string]interface{}{
 		"object": "page", "id": id, "created_time": now, "last_edited_time": now,
-		"parent": parent, "properties": props, "archived": false,
+		"parent": parent, "properties": props, "in_trash": false,
 		"__block": map[string]interface{}{"object": "block", "id": id, "type": "child_page", "child_page": map[string]interface{}{"title": title}},
 	}
 	if pid, _ := parent["page_id"].(string); pid != "" {
@@ -561,8 +575,12 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.Unlock()
 	s.Requests = append(s.Requests, r.Method+" "+r.URL.Path)
 
-	if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") || r.Header.Get("Notion-Version") == "" {
+	if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
 		apiError(w, 401, "unauthorized", "API token is invalid.")
+		return
+	}
+	if v := r.Header.Get("Notion-Version"); v != Version {
+		apiError(w, 400, "missing_version", "this fake only speaks Notion-Version "+Version+", got "+strconv.Quote(v))
 		return
 	}
 
@@ -594,9 +612,13 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			notFound(parts[1])
 			return
 		}
+		if _, ok := body["archived"]; ok {
+			apiError(w, 400, "validation_error", "body.archived is not supported in this API version; use body.in_trash")
+			return
+		}
 		s.Writes++
-		if a, ok := body["archived"].(bool); ok {
-			o["archived"] = a
+		if a, ok := body["in_trash"].(bool); ok {
+			o["in_trash"] = a
 			if a {
 				s.removeLocked(parts[1])
 			}
@@ -699,7 +721,22 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			apiError(w, 400, "validation_error", "too many blocks in one request")
 			return
 		}
-		after, _ := body["after"].(string)
+		if _, ok := body["after"]; ok {
+			apiError(w, 400, "validation_error", "body.after is not supported in this API version; use body.position")
+			return
+		}
+		after := ""
+		if pos, ok := body["position"].(map[string]interface{}); ok {
+			switch pos["type"] {
+			case "after_block":
+				ab, _ := pos["after_block"].(map[string]interface{})
+				after, _ = ab["id"].(string)
+			case "end", nil:
+			default:
+				apiError(w, 400, "validation_error", fmt.Sprintf("unsupported position type %v", pos["type"]))
+				return
+			}
+		}
 		ids, err := s.insertLocked(parts[1], kids, after, 1)
 		if err != nil {
 			apiError(w, 400, "validation_error", err.Error())
@@ -721,7 +758,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		s.Writes++
 		if o := s.objects[id]; o["object"] == "page" {
-			o["archived"] = true // deleting a child_page block trashes the page
+			o["in_trash"] = true // deleting a child_page block trashes the page
 		}
 		s.removeLocked(id)
 		writeJSON(w, 200, s.blockJSON(id))
@@ -734,7 +771,19 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 200, s.objectJSON(parts[1]))
 
-	case r.Method == "POST" && len(parts) == 3 && parts[0] == "databases" && parts[2] == "query":
+	case r.Method == "GET" && len(parts) == 2 && parts[0] == "data_sources":
+		o, ok := s.objects[parts[1]]
+		if !ok || o["object"] != "data_source" {
+			notFound(parts[1])
+			return
+		}
+		writeJSON(w, 200, s.objectJSON(parts[1]))
+
+	case r.Method == "POST" && len(parts) == 3 && parts[0] == "data_sources" && parts[2] == "query":
+		if o, ok := s.objects[parts[1]]; !ok || o["object"] != "data_source" {
+			notFound(parts[1])
+			return
+		}
 		results := []interface{}{}
 		for _, id := range s.rows[parts[1]] {
 			results = append(results, s.objectJSON(id))

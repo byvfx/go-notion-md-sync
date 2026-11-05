@@ -89,7 +89,7 @@ func (m *memNotion) childrenOf(parent string) []string {
 	var out []string
 	for _, id := range m.order {
 		p := m.pages[id]
-		if p.Parent.PageID == parent && !p.Archived {
+		if p.Parent.PageID == parent && !p.InTrash {
 			out = append(out, id)
 		}
 	}
@@ -186,7 +186,7 @@ func (m *memNotion) DeletePage(ctx context.Context, pageID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	p := m.pages[pageID]
-	p.Archived = true
+	p.InTrash = true
 	parent := p.Parent.PageID
 	var kept []notion.Block
 	for _, b := range m.content[parent] {

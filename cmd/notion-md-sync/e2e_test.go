@@ -235,7 +235,7 @@ func TestEndToEnd(t *testing.T) {
 	subPages := api.SubPages(e.root)
 	require.Contains(t, subPages, "Meeting Notes")
 	require.Contains(t, subPages, "Ideas")
-	assert.False(t, api.Archived(subPages["Meeting Notes"]), "pushing a parent must not trash its sub-pages")
+	assert.False(t, api.InTrash(subPages["Meeting Notes"]), "pushing a parent must not trash its sub-pages")
 	outline := api.Outline(e.root)
 	assert.Equal(t, []string{
 		"heading_1: Welcome",
@@ -340,7 +340,7 @@ func TestEndToEnd(t *testing.T) {
 
 	// Nothing was ever moved to the trash by accident.
 	for name, id := range api.SubPages(e.root) {
-		assert.False(t, api.Archived(id), "%s archived", name)
+		assert.False(t, api.InTrash(id), "%s in the trash", name)
 	}
 }
 

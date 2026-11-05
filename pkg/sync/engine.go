@@ -751,7 +751,7 @@ func (e *engine) syncFileWithConflictDetection(ctx context.Context, filePath str
 		if err != nil {
 			return fmt.Errorf("page %s could not be read (deleted, moved or not shared with the integration?): %w", fm.NotionID, err)
 		}
-		if p.Archived || p.InTrash {
+		if p.InTrash {
 			util.Warning("Skipping %s: its Notion page %s is in the trash. Remove notion_id from the file to create a new page.", filePath, fm.NotionID)
 			return nil
 		}

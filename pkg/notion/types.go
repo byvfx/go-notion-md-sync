@@ -62,7 +62,6 @@ type Page struct {
 	// LastEditedTime is when the page was last changed in Notion. Notion rounds
 	// it down to the minute.
 	LastEditedTime time.Time `json:"last_edited_time"`
-	Archived       bool      `json:"archived,omitempty"`
 	InTrash        bool      `json:"in_trash,omitempty"`
 }
 
@@ -281,6 +280,10 @@ type ChildDatabaseBlock struct {
 }
 
 // Database types
+
+// Database is a Notion database. Since API version 2025-09-03 a database is
+// a container of data sources, which hold the schema and the rows; the
+// client fills Properties from the database's first data source.
 type Database struct {
 	ID          string              `json:"id"`
 	Object      string              `json:"object"`
@@ -290,6 +293,21 @@ type Database struct {
 	Properties  map[string]Property `json:"properties"`
 	Parent      Parent              `json:"parent"`
 	URL         string              `json:"url"`
+	DataSources []DataSourceRef     `json:"data_sources,omitempty"`
+}
+
+// DataSourceRef names one data source of a database.
+type DataSourceRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// DataSource holds a database's schema; rows are queried through it.
+type DataSource struct {
+	ID         string              `json:"id"`
+	Object     string              `json:"object"`
+	Title      []RichText          `json:"title"`
+	Properties map[string]Property `json:"properties"`
 }
 
 type Property struct {
