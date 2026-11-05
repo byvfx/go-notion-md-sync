@@ -1,9 +1,12 @@
 package sync
 
 import (
-	"fmt"
+	"html"
+	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/byvfx/go-notion-md-sync/pkg/notion"
 	"github.com/yuin/goldmark"
@@ -13,465 +16,464 @@ import (
 	"github.com/yuin/goldmark/text"
 )
 
+// Converter converts between Markdown and Notion blocks.
 type Converter interface {
 	MarkdownToBlocks(content string) ([]map[string]interface{}, error)
 	BlocksToMarkdown(blocks []notion.Block) (string, error)
 }
 
-type converter struct{}
-
-func NewConverter() Converter {
-	return &converter{}
+type converter struct {
+	md goldmark.Markdown
 }
 
-func (c *converter) MarkdownToBlocks(content string) ([]map[string]interface{}, error) {
-	// Pre-process content to extract math blocks and replace with placeholders
-	content, mathBlocks := c.extractMathBlocks(content)
-
-	// Parse markdown into AST with table extension
-	md := goldmark.New(
-		goldmark.WithExtensions(extension.Table),
-	)
-	reader := text.NewReader([]byte(content))
-	doc := md.Parser().Parse(reader)
-
-	var blocks []map[string]interface{}
-	source := []byte(content)
-
-	// Walk the AST and convert nodes to Notion blocks
-	err := ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
-		if !entering {
-			return ast.WalkContinue, nil
-		}
-
-		switch n.Kind() {
-		case ast.KindHeading:
-			heading := n.(*ast.Heading)
-			text := extractTextFromNode(heading, source)
-			block := createHeadingBlock(heading.Level, text)
-			blocks = append(blocks, block)
-			return ast.WalkSkipChildren, nil
-
-		case ast.KindParagraph:
-			paragraph := n.(*ast.Paragraph)
-			// Check if paragraph contains only an image
-			if imageBlock := c.extractImageFromParagraph(paragraph, source); imageBlock != nil {
-				blocks = append(blocks, imageBlock)
-			} else {
-				text := extractTextFromNode(paragraph, source)
-				if strings.TrimSpace(text) != "" {
-					// Check if this is a math block placeholder
-					if strings.HasPrefix(text, "MATH_BLOCK_") {
-						index := strings.TrimPrefix(text, "MATH_BLOCK_")
-						if i := parseInt(index); i < len(mathBlocks) {
-							block := createEquationBlock(mathBlocks[i])
-							blocks = append(blocks, block)
-						}
-					} else {
-						block := createParagraphBlock(text)
-						blocks = append(blocks, block)
-					}
-				}
-			}
-			return ast.WalkSkipChildren, nil
-
-		case ast.KindList:
-			list := n.(*ast.List)
-			listBlocks := c.convertListToBlocks(list, source)
-			blocks = append(blocks, listBlocks...)
-			return ast.WalkSkipChildren, nil
-
-		case ast.KindCodeBlock:
-			codeBlock := n.(*ast.CodeBlock)
-			text := extractCodeBlockContent(codeBlock, source)
-			language := extractLanguageFromCodeBlock(codeBlock, source)
-			block := createCodeBlock(text, language)
-			blocks = append(blocks, block)
-			return ast.WalkSkipChildren, nil
-
-		case ast.KindFencedCodeBlock:
-			fencedCodeBlock := n.(*ast.FencedCodeBlock)
-			text := extractFencedCodeBlockContent(fencedCodeBlock, source)
-			language := extractLanguageFromFencedCodeBlock(fencedCodeBlock, source)
-
-			// Special handling for Mermaid diagrams - keep as code blocks but ensure proper language
-			if language == "mermaid" {
-				block := createCodeBlock(text, "mermaid")
-				blocks = append(blocks, block)
-			} else {
-				block := createCodeBlock(text, language)
-				blocks = append(blocks, block)
-			}
-			return ast.WalkSkipChildren, nil
-
-		case east.KindTable:
-			table := n.(*east.Table)
-			tableBlocks := c.convertTableToBlocks(table, source)
-			blocks = append(blocks, tableBlocks...)
-			return ast.WalkSkipChildren, nil
-
-		case ast.KindBlockquote:
-			blockquote := n.(*ast.Blockquote)
-			text := extractTextFromNode(blockquote, source)
-			block := createCalloutBlock(text)
-			blocks = append(blocks, block)
-			return ast.WalkSkipChildren, nil
-
-		case ast.KindThematicBreak:
-			block := createDividerBlock()
-			blocks = append(blocks, block)
-			return ast.WalkSkipChildren, nil
-
-		case ast.KindHTMLBlock:
-			htmlBlock := n.(*ast.HTMLBlock)
-			if toggleBlock := c.extractToggleFromHTML(htmlBlock, source); toggleBlock != nil {
-				blocks = append(blocks, toggleBlock)
-				return ast.WalkSkipChildren, nil
-			}
-
-		default:
-			// Check for math blocks (display math)
-			if n.Kind().String() == "MathBlock" {
-				text := string(n.Text(source))
-				// Remove $$ delimiters if present
-				text = strings.TrimPrefix(text, "$$")
-				text = strings.TrimSuffix(text, "$$")
-				text = strings.TrimSpace(text)
-				block := createEquationBlock(text)
-				blocks = append(blocks, block)
-				return ast.WalkSkipChildren, nil
-			}
-		}
-
-		return ast.WalkContinue, nil
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert markdown to blocks: %w", err)
+func NewConverter() Converter {
+	return &converter{
+		md: goldmark.New(goldmark.WithExtensions(
+			extension.Table,
+			extension.Strikethrough,
+			extension.TaskList,
+		)),
 	}
+}
 
+// pushState carries the placeholders found while preprocessing.
+type pushState struct {
+	anchors []string
+	maths   []string
+}
+
+// MarkdownToBlocks converts Markdown into Notion block requests. Nested
+// content (list items, quotes, toggles, tables) is put in each block's
+// "children". The result may contain notion.AnchorBlock placeholders.
+func (c *converter) MarkdownToBlocks(content string) ([]map[string]interface{}, error) {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	content, anchors, maths := preprocessMarkdown(content)
+
+	source := []byte(content)
+	doc := c.md.Parser().Parse(text.NewReader(source))
+
+	st := &pushState{anchors: anchors, maths: maths}
+	blocks := c.convertChildren(doc, source, st, true)
+	if blocks == nil {
+		blocks = []map[string]interface{}{}
+	}
 	return blocks, nil
 }
 
-func (c *converter) BlocksToMarkdown(blocks []notion.Block) (string, error) {
-	var md strings.Builder
-
-	// Track table state
-	tableState := &tableTracker{
-		rows: [][]string{},
-	}
-
-	for i, block := range blocks {
-		switch block.Type {
-		case "heading_1", "heading_2", "heading_3":
-			c.writeHeading(&md, &block)
-
-		case "paragraph":
-			c.writeParagraph(&md, &block)
-
-		case "bulleted_list_item":
-			c.writeBulletedListItem(&md, &block)
-
-		case "numbered_list_item":
-			c.writeNumberedListItem(&md, &block)
-
-		case "code":
-			c.writeCodeBlock(&md, &block)
-
-		case "quote":
-			c.writeQuote(&md, &block)
-
-		case "divider":
-			md.WriteString("---\n\n")
-
-		case "table":
-			c.startTable(tableState, &block)
-
-		case "table_row":
-			c.processTableRow(tableState, &block, i, blocks, &md)
-
-		case "image":
-			c.writeImage(&md, &block)
-
-		case "callout":
-			c.writeCallout(&md, &block)
-
-		case "toggle":
-			c.writeToggle(&md, &block)
-
-		case "bookmark":
-			c.writeBookmark(&md, &block)
-
-		case "equation":
-			c.writeEquation(&md, &block)
-		}
-	}
-
-	return strings.TrimSpace(md.String()), nil
+// convertChildren converts the block-level children of node.
+func (c *converter) convertChildren(node ast.Node, source []byte, st *pushState, topLevel bool) []map[string]interface{} {
+	return c.convertSiblings(node.FirstChild(), source, st, topLevel)
 }
 
-type tableTracker struct {
-	inTable   bool
-	rows      [][]string
-	hasHeader bool
+func (c *converter) convertSiblings(first ast.Node, source []byte, st *pushState, topLevel bool) []map[string]interface{} {
+	return c.convertRange(first, nil, source, st, topLevel)
 }
 
-func (c *converter) writeHeading(md *strings.Builder, block *notion.Block) {
-	var text string
-	var prefix string
+// convertRange converts sibling nodes from first up to (not including) stop.
+func (c *converter) convertRange(first, stop ast.Node, source []byte, st *pushState, topLevel bool) []map[string]interface{} {
+	var blocks []map[string]interface{}
+	for n := first; n != nil && n != stop; n = n.NextSibling() {
+		switch v := n.(type) {
+		case *ast.Heading:
+			blocks = append(blocks, createHeadingBlock(v.Level, inlineRichText(v, source)))
 
-	switch block.Type {
-	case "heading_1":
-		if block.Heading1 != nil {
-			text = extractPlainTextFromRichText(block.Heading1.RichText)
-			prefix = "# "
-		}
-	case "heading_2":
-		if block.Heading2 != nil {
-			text = extractPlainTextFromRichText(block.Heading2.RichText)
-			prefix = "## "
-		}
-	case "heading_3":
-		if block.Heading3 != nil {
-			text = extractPlainTextFromRichText(block.Heading3.RichText)
-			prefix = "### "
-		}
-	}
+		case *ast.Paragraph, *ast.TextBlock:
+			if b := c.convertParagraph(n, source, st, topLevel); b != nil {
+				blocks = append(blocks, b)
+			}
 
-	if text != "" {
-		md.WriteString(prefix + text + "\n\n")
-	}
-}
+		case *ast.List:
+			blocks = append(blocks, c.convertList(v, source, st)...)
 
-func (c *converter) writeParagraph(md *strings.Builder, block *notion.Block) {
-	if block.Paragraph != nil {
-		text := extractPlainTextFromRichText(block.Paragraph.RichText)
-		if strings.TrimSpace(text) != "" {
-			md.WriteString(text + "\n\n")
-		}
-	}
-}
+		case *ast.FencedCodeBlock:
+			lang := ""
+			if v.Info != nil {
+				lang = strings.Fields(string(v.Info.Text(source)) + " ")[0]
+			}
+			blocks = append(blocks, createCodeBlock(codeLines(v, source), lang))
 
-func (c *converter) writeBulletedListItem(md *strings.Builder, block *notion.Block) {
-	if block.BulletedListItem != nil {
-		text := extractPlainTextFromRichText(block.BulletedListItem.RichText)
-		md.WriteString("- " + text + "\n")
-	}
-}
+		case *ast.CodeBlock:
+			blocks = append(blocks, createCodeBlock(codeLines(v, source), ""))
 
-func (c *converter) writeNumberedListItem(md *strings.Builder, block *notion.Block) {
-	if block.NumberedListItem != nil {
-		text := extractPlainTextFromRichText(block.NumberedListItem.RichText)
-		md.WriteString("1. " + text + "\n")
-	}
-}
+		case *ast.Blockquote:
+			blocks = append(blocks, c.convertBlockquote(v, source, st))
 
-func (c *converter) writeCodeBlock(md *strings.Builder, block *notion.Block) {
-	if block.Code != nil {
-		code := extractPlainTextFromRichText(block.Code.RichText)
-		language := block.Code.Language
-		md.WriteString("```" + language + "\n" + code + "\n```\n\n")
-	}
-}
+		case *ast.ThematicBreak:
+			blocks = append(blocks, createDividerBlock())
 
-func (c *converter) writeQuote(md *strings.Builder, block *notion.Block) {
-	if block.Quote != nil {
-		text := extractPlainTextFromRichText(block.Quote.RichText)
-		md.WriteString("> " + text + "\n\n")
-	}
-}
+		case *east.Table:
+			if b := convertTable(v, source); b != nil {
+				blocks = append(blocks, b)
+			}
 
-func (c *converter) startTable(state *tableTracker, block *notion.Block) {
-	state.inTable = true
-	state.rows = [][]string{}
-	state.hasHeader = false
-	if block.Table != nil {
-		state.hasHeader = block.Table.HasColumnHeader
-	}
-}
-
-func (c *converter) processTableRow(state *tableTracker, block *notion.Block, index int, blocks []notion.Block, md *strings.Builder) {
-	if state.inTable && block.TableRow != nil {
-		var row []string
-		for _, cell := range block.TableRow.Cells {
-			cellText := extractPlainTextFromRichText(cell)
-			row = append(row, cellText)
-		}
-		state.rows = append(state.rows, row)
-	}
-
-	// Check if this is the last table row
-	isLastTableRow := index == len(blocks)-1 || (index < len(blocks)-1 && blocks[index+1].Type != "table_row")
-
-	if state.inTable && isLastTableRow && len(state.rows) > 0 {
-		// Write the table
-		c.writeMarkdownTable(md, state.rows, state.hasHeader)
-		state.inTable = false
-		state.rows = nil
-	}
-}
-
-func (c *converter) writeMarkdownTable(md *strings.Builder, rows [][]string, hasHeader bool) {
-	if len(rows) == 0 {
-		return
-	}
-
-	// Determine column count from first row
-	columnCount := len(rows[0])
-
-	// Write all rows
-	for i, row := range rows {
-		md.WriteString("| ")
-		for j, cell := range row {
-			md.WriteString(cell)
-			if j < len(row)-1 {
-				md.WriteString(" | ")
+		case *ast.HTMLBlock:
+			raw := htmlBlockText(v, source)
+			if summary, rest, ok := parseDetailsOpen(raw); ok {
+				toggle, last := c.convertDetails(v, summary, rest, source, st)
+				blocks = append(blocks, toggle)
+				n = last
+				continue
+			}
+			if b := htmlAsParagraph(raw); b != nil {
+				blocks = append(blocks, b)
 			}
 		}
-		// Pad with empty cells if needed
-		for j := len(row); j < columnCount; j++ {
-			md.WriteString(" | ")
-		}
-		md.WriteString(" |\n")
+	}
+	return blocks
+}
 
-		// Add separator after header row
-		if i == 0 && hasHeader {
-			md.WriteString("| ")
-			for j := 0; j < columnCount; j++ {
-				md.WriteString("---")
-				if j < columnCount-1 {
-					md.WriteString(" | ")
+func (c *converter) convertParagraph(n ast.Node, source []byte, st *pushState, topLevel bool) map[string]interface{} {
+	plain := strings.TrimSpace(plainText(n, source))
+
+	if i := placeholderIndex(plain, anchorPlaceholderPrefix); i >= 0 && i < len(st.anchors) {
+		if topLevel {
+			return notion.AnchorBlock(st.anchors[i])
+		}
+		return nil // Kept blocks can only be positioned at the top level.
+	}
+	if i := placeholderIndex(plain, mathPlaceholderPrefix); i >= 0 && i < len(st.maths) {
+		return createEquationBlock(st.maths[i])
+	}
+
+	// A paragraph that is only an image becomes an image block.
+	if img := onlyChild[*ast.Image](n); img != nil {
+		dest := string(img.Destination)
+		if allowedLink(dest) != "" {
+			caption := plainText(img, source)
+			if caption == "" {
+				caption = string(img.Title)
+			}
+			return createImageBlock(dest, caption)
+		}
+		// Notion only accepts images by URL. Keep a local image reference as
+		// text so nothing is lost and the push doesn't fail.
+		return createRichTextBlock("paragraph", plainRichText("!["+plainText(img, source)+"]("+dest+")"))
+	}
+
+	// A paragraph that is only a bare URL becomes a bookmark.
+	if link := onlyChild[*ast.AutoLink](n); link != nil && link.AutoLinkType == ast.AutoLinkURL {
+		if u := allowedLink(string(link.URL(source))); u != "" {
+			return createBookmarkBlock(u)
+		}
+	}
+
+	rt := inlineRichText(n, source)
+	if len(rt) == 0 {
+		return nil
+	}
+	return createRichTextBlock("paragraph", rt)
+}
+
+// onlyChild returns the node's single child if it has type T.
+func onlyChild[T ast.Node](n ast.Node) T {
+	var zero T
+	if n.ChildCount() != 1 {
+		return zero
+	}
+	if v, ok := n.FirstChild().(T); ok {
+		return v
+	}
+	return zero
+}
+
+func (c *converter) convertList(list *ast.List, source []byte, st *pushState) []map[string]interface{} {
+	var blocks []map[string]interface{}
+	for item := list.FirstChild(); item != nil; item = item.NextSibling() {
+		li, ok := item.(*ast.ListItem)
+		if !ok {
+			continue
+		}
+
+		var rt []map[string]interface{}
+		checked, isTask := false, false
+		rest := li.FirstChild()
+		if first := li.FirstChild(); first != nil {
+			if _, isPara := first.(*ast.Paragraph); isPara || first.Kind() == ast.KindTextBlock {
+				if cb, ok := first.FirstChild().(*east.TaskCheckBox); ok {
+					isTask, checked = true, cb.IsChecked
 				}
-			}
-			md.WriteString(" |\n")
-		}
-	}
-
-	md.WriteString("\n")
-}
-
-// Helper functions
-
-func extractTextFromNode(node ast.Node, source []byte) string {
-	var buf strings.Builder
-
-	_ = ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
-		if entering {
-			switch n.Kind() {
-			case ast.KindText:
-				textNode := n.(*ast.Text)
-				buf.Write(textNode.Segment.Value(source))
-			case ast.KindString:
-				stringNode := n.(*ast.String)
-				buf.Write(stringNode.Value)
+				rt = inlineRichText(first, source)
+				rest = first.NextSibling()
 			}
 		}
-		return ast.WalkContinue, nil
-	})
+		children := c.convertSiblings(rest, source, st, false)
 
-	return buf.String()
+		blockType := "bulleted_list_item"
+		switch {
+		case isTask:
+			blockType = "to_do"
+		case list.IsOrdered():
+			blockType = "numbered_list_item"
+		}
+		block := createRichTextBlock(blockType, rt)
+		if isTask {
+			block["to_do"].(map[string]interface{})["checked"] = checked
+		}
+		setChildren(block, children)
+		blocks = append(blocks, block)
+	}
+	return blocks
 }
 
-func createHeadingBlock(level int, text string) map[string]interface{} {
-	blockType := fmt.Sprintf("heading_%d", level)
-	if level > 3 {
-		blockType = "heading_3"
-	}
-
-	return map[string]interface{}{
-		"type": blockType,
-		blockType: map[string]interface{}{
-			"rich_text": []map[string]interface{}{
-				{
-					"type": "text",
-					"text": map[string]interface{}{
-						"content": text,
-					},
-				},
-			},
-		},
-	}
-}
-
-func createParagraphBlock(text string) map[string]interface{} {
-	return map[string]interface{}{
-		"type": "paragraph",
-		"paragraph": map[string]interface{}{
-			"rich_text": []map[string]interface{}{
-				{
-					"type": "text",
-					"text": map[string]interface{}{
-						"content": text,
-					},
-				},
-			},
-		},
-	}
-}
-
-func createCodeBlock(text, language string) map[string]interface{} {
-	// Notion requires a valid language, use "plain text" for empty languages
-	if language == "" {
-		language = "plain text"
-	}
-
-	// Validate language against Notion's supported languages
-	language = normalizeNotionLanguage(language)
-
-	return map[string]interface{}{
-		"type": "code",
-		"code": map[string]interface{}{
-			"rich_text": []map[string]interface{}{
-				{
-					"type": "text",
-					"text": map[string]interface{}{
-						"content": text,
-					},
-				},
-			},
-			"language": language,
-		},
-	}
-}
-
-func createCalloutBlock(text string) map[string]interface{} {
-	// Extract emoji if present at the beginning of the text
+func (c *converter) convertBlockquote(bq *ast.Blockquote, source []byte, st *pushState) map[string]interface{} {
+	var rt []map[string]interface{}
+	rest := bq.FirstChild()
 	emoji := ""
-	content := text
-
-	// Simple check for emoji at start (could be enhanced)
-	if len(text) > 0 {
-		// Check if text starts with common callout indicators
-		if strings.HasPrefix(text, "💡 ") || strings.HasPrefix(text, "⚠️ ") ||
-			strings.HasPrefix(text, "❗ ") || strings.HasPrefix(text, "📝 ") {
-			emoji = text[:strings.Index(text, " ")]
-			content = text[len(emoji)+1:]
-		}
+	if p, ok := bq.FirstChild().(*ast.Paragraph); ok {
+		rt = inlineRichText(p, source)
+		rest = p.NextSibling()
+		emoji, rt = splitLeadingEmoji(rt)
 	}
+	children := c.convertSiblings(rest, source, st, false)
 
-	calloutBlock := map[string]interface{}{
-		"type": "callout",
-		"callout": map[string]interface{}{
-			"rich_text": []map[string]interface{}{
-				{
-					"type": "text",
-					"text": map[string]interface{}{
-						"content": content,
-					},
-				},
-			},
-			"color": "gray_background",
-		},
-	}
-
+	var block map[string]interface{}
 	if emoji != "" {
-		calloutBlock["callout"].(map[string]interface{})["icon"] = map[string]interface{}{
+		block = createRichTextBlock("callout", rt)
+		block["callout"].(map[string]interface{})["icon"] = map[string]interface{}{
 			"type":  "emoji",
 			"emoji": emoji,
 		}
+	} else {
+		block = createRichTextBlock("quote", rt)
+	}
+	setChildren(block, children)
+	return block
+}
+
+// splitLeadingEmoji removes an emoji followed by a space from the start of
+// rich text, which is how callouts are written in Markdown ("> 💡 text").
+func splitLeadingEmoji(rt []map[string]interface{}) (string, []map[string]interface{}) {
+	if len(rt) == 0 {
+		return "", rt
+	}
+	textObj, _ := rt[0]["text"].(map[string]interface{})
+	content, _ := textObj["content"].(string)
+	sp := strings.IndexByte(content, ' ')
+	if sp <= 0 || sp > 32 {
+		return "", rt
+	}
+	candidate := content[:sp]
+	if !isEmoji(candidate) {
+		return "", rt
+	}
+	rest := content[sp+1:]
+	newText := map[string]interface{}{}
+	for k, v := range textObj {
+		newText[k] = v
+	}
+	newText["content"] = rest
+	first := map[string]interface{}{}
+	for k, v := range rt[0] {
+		first[k] = v
+	}
+	first["text"] = newText
+	out := append([]map[string]interface{}{}, rt...)
+	if rest == "" {
+		out = out[1:]
+	} else {
+		out[0] = first
+	}
+	return candidate, out
+}
+
+// isEmoji reports whether s looks like a single emoji (possibly with
+// modifiers, variation selectors or zero-width joiners).
+func isEmoji(s string) bool {
+	if s == "" || utf8.RuneCountInString(s) > 10 {
+		return false
+	}
+	r, _ := utf8.DecodeRuneInString(s)
+	return r >= 0x1F000 || (r >= 0x2190 && r <= 0x2BFF) || unicode.Is(unicode.So, r)
+}
+
+var detailsOpenRe = regexp.MustCompile(`(?is)^\s*<details[^>]*>\s*(?:<summary[^>]*>(.*?)</summary>)?(.*)$`)
+
+// parseDetailsOpen recognises an HTML block that opens a <details> toggle.
+func parseDetailsOpen(raw string) (summary, rest string, ok bool) {
+	m := detailsOpenRe.FindStringSubmatch(raw)
+	if m == nil {
+		return "", "", false
+	}
+	return strings.TrimSpace(html.UnescapeString(stripTags(m[1]))), m[2], true
+}
+
+var tagRe = regexp.MustCompile(`<[^>]+>`)
+
+func stripTags(s string) string {
+	return tagRe.ReplaceAllString(s, "")
+}
+
+// convertDetails turns <details><summary>…</summary> … </details> into a
+// toggle block. The content between the tags (which Markdown parses as
+// separate blocks) becomes the toggle's children. It returns the toggle and
+// the last node it consumed.
+func (c *converter) convertDetails(open *ast.HTMLBlock, summary, rest string, source []byte, st *pushState) (map[string]interface{}, ast.Node) {
+	toggle := createRichTextBlock("toggle", plainRichText(summary))
+
+	lower := strings.ToLower(rest)
+	depth := 1 + strings.Count(lower, "<details") - strings.Count(lower, "</details>")
+	if depth <= 0 {
+		// Everything in one HTML block: <details><summary>x</summary>body</details>
+		body := strings.TrimSpace(html.UnescapeString(stripTags(rest)))
+		if body != "" {
+			setChildren(toggle, []map[string]interface{}{createRichTextBlock("paragraph", plainRichText(body))})
+		}
+		return toggle, open
 	}
 
-	return calloutBlock
+	// Find the HTML block that closes this toggle. Without one, the toggle
+	// runs to the end of its parent.
+	var closeNode ast.Node
+	last := ast.Node(open)
+	for n := open.NextSibling(); n != nil; n = n.NextSibling() {
+		last = n
+		if hb, ok := n.(*ast.HTMLBlock); ok {
+			raw := strings.ToLower(htmlBlockText(hb, source))
+			depth += strings.Count(raw, "<details") - strings.Count(raw, "</details>")
+			if depth <= 0 {
+				closeNode = n
+				break
+			}
+		}
+	}
+
+	setChildren(toggle, c.convertRange(open.NextSibling(), closeNode, source, st, false))
+	return toggle, last
+}
+
+func htmlBlockText(hb *ast.HTMLBlock, source []byte) string {
+	var b strings.Builder
+	for i := 0; i < hb.Lines().Len(); i++ {
+		line := hb.Lines().At(i)
+		b.Write(line.Value(source))
+	}
+	if hb.HasClosure() {
+		b.Write(hb.ClosureLine.Value(source))
+	}
+	return b.String()
+}
+
+var htmlCommentRe = regexp.MustCompile(`(?s)<!--.*?-->`)
+
+// htmlAsParagraph keeps raw HTML (other than comments and stray toggle tags)
+// as plain text, so it isn't silently dropped.
+func htmlAsParagraph(raw string) map[string]interface{} {
+	raw = htmlCommentRe.ReplaceAllString(raw, "")
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || strings.EqualFold(trimmed, "</details>") {
+		return nil
+	}
+	return createRichTextBlock("paragraph", plainRichText(trimmed))
+}
+
+func codeLines(n ast.Node, source []byte) string {
+	var b strings.Builder
+	lines := n.Lines()
+	for i := 0; i < lines.Len(); i++ {
+		line := lines.At(i)
+		b.Write(line.Value(source))
+	}
+	return strings.TrimSuffix(b.String(), "\n")
+}
+
+func convertTable(table *east.Table, source []byte) map[string]interface{} {
+	var rows [][][]map[string]interface{}
+	hasHeader := false
+	for child := table.FirstChild(); child != nil; child = child.NextSibling() {
+		switch child.(type) {
+		case *east.TableHeader:
+			hasHeader = true
+		case *east.TableRow:
+		default:
+			continue
+		}
+		var cells [][]map[string]interface{}
+		for cell := child.FirstChild(); cell != nil; cell = cell.NextSibling() {
+			if _, ok := cell.(*east.TableCell); ok {
+				cells = append(cells, inlineRichText(cell, source))
+			}
+		}
+		rows = append(rows, cells)
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+
+	width := 0
+	for _, r := range rows {
+		if len(r) > width {
+			width = len(r)
+		}
+	}
+	if width == 0 {
+		return nil
+	}
+
+	rowBlocks := make([]map[string]interface{}, 0, len(rows))
+	for _, r := range rows {
+		// Notion requires every row to have exactly table_width cells.
+		for len(r) < width {
+			r = append(r, []map[string]interface{}{})
+		}
+		rowBlocks = append(rowBlocks, map[string]interface{}{
+			"type": "table_row",
+			"table_row": map[string]interface{}{
+				"cells": r,
+			},
+		})
+	}
+
+	return map[string]interface{}{
+		"type": "table",
+		"table": map[string]interface{}{
+			"table_width":       width,
+			"has_column_header": hasHeader,
+			"has_row_header":    false,
+			"children":          rowBlocks,
+		},
+	}
+}
+
+// --- block builders ---
+
+func createRichTextBlock(blockType string, rt []map[string]interface{}) map[string]interface{} {
+	if rt == nil {
+		rt = []map[string]interface{}{}
+	}
+	return map[string]interface{}{
+		"type": blockType,
+		blockType: map[string]interface{}{
+			"rich_text": rt,
+		},
+	}
+}
+
+func setChildren(block map[string]interface{}, children []map[string]interface{}) {
+	if len(children) == 0 {
+		return
+	}
+	t := block["type"].(string)
+	block[t].(map[string]interface{})["children"] = children
+}
+
+func createHeadingBlock(level int, rt []map[string]interface{}) map[string]interface{} {
+	if level < 1 {
+		level = 1
+	}
+	if level > 3 {
+		level = 3
+	}
+	return createRichTextBlock("heading_"+strconv.Itoa(level), rt)
+}
+
+func createCodeBlock(code, language string) map[string]interface{} {
+	return map[string]interface{}{
+		"type": "code",
+		"code": map[string]interface{}{
+			"rich_text": plainRichText(code),
+			"language":  normalizeNotionLanguage(language),
+		},
+	}
 }
 
 func createDividerBlock() map[string]interface{} {
@@ -481,44 +483,28 @@ func createDividerBlock() map[string]interface{} {
 	}
 }
 
-func createImageBlock(url, caption string) map[string]interface{} {
-	imageBlock := map[string]interface{}{
-		"type": "image",
-		"image": map[string]interface{}{
-			"type": "external",
-			"external": map[string]interface{}{
-				"url": url,
-			},
+func createBookmarkBlock(url string) map[string]interface{} {
+	return map[string]interface{}{
+		"type": "bookmark",
+		"bookmark": map[string]interface{}{
+			"url": url,
 		},
 	}
-
-	if caption != "" {
-		imageBlock["image"].(map[string]interface{})["caption"] = []map[string]interface{}{
-			{
-				"type": "text",
-				"text": map[string]interface{}{
-					"content": caption,
-				},
-			},
-		}
-	}
-
-	return imageBlock
 }
 
-func createToggleBlock(summary string) map[string]interface{} {
-	return map[string]interface{}{
-		"type": "toggle",
-		"toggle": map[string]interface{}{
-			"rich_text": []map[string]interface{}{
-				{
-					"type": "text",
-					"text": map[string]interface{}{
-						"content": summary,
-					},
-				},
-			},
+func createImageBlock(url, caption string) map[string]interface{} {
+	image := map[string]interface{}{
+		"type": "external",
+		"external": map[string]interface{}{
+			"url": url,
 		},
+	}
+	if caption != "" {
+		image["caption"] = plainRichText(caption)
+	}
+	return map[string]interface{}{
+		"type":  "image",
+		"image": image,
 	}
 }
 
@@ -535,24 +521,32 @@ func normalizeNotionLanguage(lang string) string {
 	// Map common language names to Notion's expected values
 	langMap := map[string]string{
 		"js":         "javascript",
+		"jsx":        "javascript",
 		"ts":         "typescript",
+		"tsx":        "typescript",
 		"py":         "python",
 		"rb":         "ruby",
 		"sh":         "shell",
+		"zsh":        "shell",
 		"yml":        "yaml",
+		"golang":     "go",
+		"rs":         "rust",
+		"cs":         "c#",
+		"cpp":        "c++",
+		"kt":         "kotlin",
+		"md":         "markdown",
+		"text":       "plain text",
+		"txt":        "plain text",
+		"plaintext":  "plain text",
 		"dockerfile": "docker",
 		"":           "plain text",
 	}
 
-	// Convert to lowercase for comparison
-	langLower := strings.ToLower(lang)
-
-	// Check if we have a mapping
+	langLower := strings.ToLower(strings.TrimSpace(lang))
 	if mapped, exists := langMap[langLower]; exists {
 		return mapped
 	}
 
-	// Check if it's already a valid Notion language
 	validLanguages := []string{
 		"abap", "agda", "arduino", "ascii art", "assembly", "bash", "basic", "bnf",
 		"c", "c#", "c++", "clojure", "coffeescript", "coq", "css", "dart", "dhall",
@@ -567,399 +561,12 @@ func normalizeNotionLanguage(lang string) string {
 		"swift", "toml", "typescript", "vb.net", "verilog", "vhdl", "visual basic",
 		"webassembly", "xml", "yaml", "java/c/c++/c#", "notionscript",
 	}
-
-	// Check if the language is valid as-is
 	for _, validLang := range validLanguages {
 		if langLower == validLang {
 			return validLang
 		}
 	}
-
-	// If not found, default to plain text
 	return "plain text"
-}
-
-func (c *converter) convertListToBlocks(list *ast.List, source []byte) []map[string]interface{} {
-	return c.convertListToBlocksWithDepth(list, source, 0)
-}
-
-func (c *converter) convertListToBlocksWithDepth(list *ast.List, source []byte, depth int) []map[string]interface{} {
-	var blocks []map[string]interface{}
-
-	for child := list.FirstChild(); child != nil; child = child.NextSibling() {
-		if listItem, ok := child.(*ast.ListItem); ok {
-			// Extract the direct text content of this list item (excluding nested lists)
-			text := c.extractListItemText(listItem, source)
-
-			blockType := "bulleted_list_item"
-			if list.IsOrdered() {
-				blockType = "numbered_list_item"
-			}
-
-			// Create indentation for nested lists by adding spaces
-			indent := strings.Repeat("  ", depth)
-
-			block := map[string]interface{}{
-				"type": blockType,
-				blockType: map[string]interface{}{
-					"rich_text": []map[string]interface{}{
-						{
-							"type": "text",
-							"text": map[string]interface{}{
-								"content": indent + text,
-							},
-						},
-					},
-				},
-			}
-			blocks = append(blocks, block)
-
-			// Process nested lists
-			for nestedChild := listItem.FirstChild(); nestedChild != nil; nestedChild = nestedChild.NextSibling() {
-				if nestedList, ok := nestedChild.(*ast.List); ok {
-					nestedBlocks := c.convertListToBlocksWithDepth(nestedList, source, depth+1)
-					blocks = append(blocks, nestedBlocks...)
-				}
-			}
-		}
-	}
-
-	return blocks
-}
-
-func (c *converter) extractListItemText(listItem *ast.ListItem, source []byte) string {
-	var text strings.Builder
-
-	// Walk through the list item and extract text, but skip nested lists
-	_ = ast.Walk(listItem, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
-		if !entering {
-			return ast.WalkContinue, nil
-		}
-
-		// If we encounter a nested list, skip it entirely
-		if n.Kind() == ast.KindList && n != listItem {
-			return ast.WalkSkipChildren, nil
-		}
-
-		switch n.Kind() {
-		case ast.KindText:
-			textNode := n.(*ast.Text)
-			text.Write(textNode.Segment.Value(source))
-		case ast.KindString:
-			stringNode := n.(*ast.String)
-			text.Write(stringNode.Value)
-		}
-		return ast.WalkContinue, nil
-	})
-
-	return strings.TrimSpace(text.String())
-}
-
-func extractPlainTextFromRichText(richTexts []notion.RichText) string {
-	var text strings.Builder
-
-	for _, rt := range richTexts {
-		text.WriteString(rt.PlainText)
-	}
-
-	return text.String()
-}
-
-func extractLanguageFromCodeBlock(_ *ast.CodeBlock, _ []byte) string {
-	// For indented code blocks, there's typically no language info
-	return ""
-}
-
-func extractCodeBlockContent(codeBlock *ast.CodeBlock, source []byte) string {
-	var buf strings.Builder
-
-	// For code blocks, iterate through lines
-	for i := 0; i < codeBlock.Lines().Len(); i++ {
-		line := codeBlock.Lines().At(i)
-		buf.Write(line.Value(source))
-	}
-
-	return strings.TrimRight(buf.String(), "\n")
-}
-
-func extractFencedCodeBlockContent(fencedCodeBlock *ast.FencedCodeBlock, source []byte) string {
-	var buf strings.Builder
-
-	// For fenced code blocks, iterate through lines
-	for i := 0; i < fencedCodeBlock.Lines().Len(); i++ {
-		line := fencedCodeBlock.Lines().At(i)
-		buf.Write(line.Value(source))
-	}
-
-	return strings.TrimRight(buf.String(), "\n")
-}
-
-func extractLanguageFromFencedCodeBlock(fencedCodeBlock *ast.FencedCodeBlock, source []byte) string {
-	// Get the info string from the fenced code block
-	if fencedCodeBlock.Info != nil {
-		infoText := string(fencedCodeBlock.Info.Text(source))
-		// The language is typically the first word in the info string
-		if len(infoText) > 0 {
-			// Split by space and take the first part
-			parts := strings.Fields(infoText)
-			if len(parts) > 0 {
-				return parts[0]
-			}
-		}
-	}
-	return ""
-}
-
-func (c *converter) convertTableToBlocks(table *east.Table, source []byte) []map[string]interface{} {
-	// Count columns from the first row
-	var columnCount int
-	var hasHeader bool
-
-	// Check if table has a header
-	for child := table.FirstChild(); child != nil; child = child.NextSibling() {
-		if _, ok := child.(*east.TableHeader); ok {
-			hasHeader = true
-			// Count columns from the header row
-			break
-		}
-	}
-
-	// Count columns from the first row (header or body)
-	if firstChild := table.FirstChild(); firstChild != nil {
-		switch node := firstChild.(type) {
-		case *east.TableHeader:
-			// Count cells directly in header
-			for cell := node.FirstChild(); cell != nil; cell = cell.NextSibling() {
-				columnCount++
-			}
-		case *east.TableRow:
-			// Count cells in row
-			for cell := node.FirstChild(); cell != nil; cell = cell.NextSibling() {
-				columnCount++
-			}
-		}
-	}
-
-	// Collect all table row blocks as children
-	var tableRowBlocks []map[string]interface{}
-
-	// Convert header rows first if they exist
-	for child := table.FirstChild(); child != nil; child = child.NextSibling() {
-		if tableHeader, ok := child.(*east.TableHeader); ok {
-			// TableHeader contains cells directly, not rows
-			var cells [][]map[string]interface{}
-			for cell := tableHeader.FirstChild(); cell != nil; cell = cell.NextSibling() {
-				if tableCell, ok := cell.(*east.TableCell); ok {
-					cellText := extractTextFromNode(tableCell, source)
-					cellRichText := []map[string]interface{}{
-						{
-							"type": "text",
-							"text": map[string]interface{}{
-								"content": strings.TrimSpace(cellText),
-							},
-						},
-					}
-					cells = append(cells, cellRichText)
-				}
-			}
-
-			// Create a row block for the header
-			rowBlock := map[string]interface{}{
-				"type": "table_row",
-				"table_row": map[string]interface{}{
-					"cells": cells,
-				},
-			}
-			tableRowBlocks = append(tableRowBlocks, rowBlock)
-		}
-	}
-
-	// Convert body rows
-	for child := table.FirstChild(); child != nil; child = child.NextSibling() {
-		switch node := child.(type) {
-		case *east.TableRow:
-			// Direct row (no explicit header/body)
-			rowBlock := c.convertTableRow(node, source)
-			tableRowBlocks = append(tableRowBlocks, rowBlock)
-		case *east.TableHeader:
-			// Already handled above
-			continue
-		default:
-			// Skip unknown nodes
-		}
-	}
-
-	// Create the main table block without children (children are sent as separate blocks)
-	tableBlock := map[string]interface{}{
-		"type": "table",
-		"table": map[string]interface{}{
-			"table_width":       columnCount,
-			"has_column_header": hasHeader,
-			"has_row_header":    false, // Markdown tables don't typically have row headers
-		},
-	}
-
-	// Return the table block followed by all the row blocks
-	allBlocks := []map[string]interface{}{tableBlock}
-	allBlocks = append(allBlocks, tableRowBlocks...)
-	return allBlocks
-}
-
-func (c *converter) convertTableRow(row *east.TableRow, source []byte) map[string]interface{} {
-	var cells [][]map[string]interface{}
-	for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
-		if tableCell, ok := cell.(*east.TableCell); ok {
-			cellText := extractTextFromNode(tableCell, source)
-			cellRichText := []map[string]interface{}{
-				{
-					"type": "text",
-					"text": map[string]interface{}{
-						"content": strings.TrimSpace(cellText),
-					},
-				},
-			}
-			cells = append(cells, cellRichText)
-		}
-	}
-
-	return map[string]interface{}{
-		"type": "table_row",
-		"table_row": map[string]interface{}{
-			"cells": cells,
-		},
-	}
-}
-
-func (c *converter) writeImage(md *strings.Builder, block *notion.Block) {
-	if block.Image != nil {
-		var url string
-		if block.Image.External != nil {
-			url = block.Image.External.URL
-		} else if block.Image.File != nil {
-			url = block.Image.File.URL
-		}
-
-		caption := extractPlainTextFromRichText(block.Image.Caption)
-		if caption != "" {
-			fmt.Fprintf(md, "![%s](%s)\n\n", caption, url)
-		} else {
-			fmt.Fprintf(md, "![](%s)\n\n", url)
-		}
-	}
-}
-
-func (c *converter) writeCallout(md *strings.Builder, block *notion.Block) {
-	if block.Callout != nil {
-		text := extractPlainTextFromRichText(block.Callout.RichText)
-		icon := ""
-		if block.Callout.Icon != nil && block.Callout.Icon.Emoji != "" {
-			icon = block.Callout.Icon.Emoji + " "
-		}
-
-		// Convert callout to blockquote with icon
-		fmt.Fprintf(md, "> %s%s\n\n", icon, text)
-	}
-}
-
-func (c *converter) writeToggle(md *strings.Builder, block *notion.Block) {
-	if block.Toggle != nil {
-		text := extractPlainTextFromRichText(block.Toggle.RichText)
-		// Use HTML details/summary for toggle functionality
-		md.WriteString("<details>\n<summary>" + text + "</summary>\n\n")
-		// Note: Child blocks would be added here if we supported nested blocks
-		md.WriteString("</details>\n\n")
-	}
-}
-
-func (c *converter) writeBookmark(md *strings.Builder, block *notion.Block) {
-	if block.Bookmark != nil {
-		caption := extractPlainTextFromRichText(block.Bookmark.Caption)
-		if caption != "" {
-			fmt.Fprintf(md, "[%s](%s)\n\n", caption, block.Bookmark.URL)
-		} else {
-			fmt.Fprintf(md, "<%s>\n\n", block.Bookmark.URL)
-		}
-	}
-}
-
-func (c *converter) writeEquation(md *strings.Builder, block *notion.Block) {
-	if block.Equation != nil {
-		fmt.Fprintf(md, "$$%s$$\n\n", block.Equation.Expression)
-	}
-}
-
-func (c *converter) extractImageFromParagraph(paragraph *ast.Paragraph, source []byte) map[string]interface{} {
-	// Check if paragraph contains only an image
-	if paragraph.ChildCount() == 1 {
-		if image, ok := paragraph.FirstChild().(*ast.Image); ok {
-			url := string(image.Destination)
-			caption := string(image.Title)
-
-			// If no title, try to extract alt text
-			if caption == "" && image.ChildCount() > 0 {
-				caption = extractTextFromNode(image, source)
-			}
-
-			return createImageBlock(url, caption)
-		}
-	}
-	return nil
-}
-
-func (c *converter) extractToggleFromHTML(htmlBlock *ast.HTMLBlock, source []byte) map[string]interface{} {
-	// Extract the HTML content
-	var htmlContent strings.Builder
-	for i := 0; i < htmlBlock.Lines().Len(); i++ {
-		line := htmlBlock.Lines().At(i)
-		htmlContent.Write(line.Value(source))
-	}
-
-	html := strings.TrimSpace(htmlContent.String())
-
-	// Check if it's a details/summary element
-	if strings.HasPrefix(html, "<details>") && strings.Contains(html, "<summary>") {
-		// Extract summary text (simple regex approach)
-		summaryStart := strings.Index(html, "<summary>") + 9
-		summaryEnd := strings.Index(html, "</summary>")
-
-		if summaryEnd > summaryStart {
-			summary := html[summaryStart:summaryEnd]
-			return createToggleBlock(summary)
-		}
-	}
-
-	return nil
-}
-
-// extractMathBlocks extracts $$...$$ math blocks from content and replaces them with placeholders
-func (c *converter) extractMathBlocks(content string) (string, []string) {
-	var mathBlocks []string
-	result := content
-
-	// Find all $$...$$ blocks
-	for {
-		start := strings.Index(result, "$$")
-		if start == -1 {
-			break
-		}
-
-		// Find the closing $$
-		end := strings.Index(result[start+2:], "$$")
-		if end == -1 {
-			break
-		}
-		end += start + 2 + 2 // Adjust for the offset and length of $$
-
-		// Extract the math content (without the $$ delimiters)
-		mathContent := result[start+2 : end-2]
-		mathBlocks = append(mathBlocks, strings.TrimSpace(mathContent))
-
-		// Replace with placeholder on its own line
-		placeholder := fmt.Sprintf("\n\nMATH_BLOCK_%d\n\n", len(mathBlocks)-1)
-		result = result[:start] + placeholder + result[end:]
-	}
-
-	return result, mathBlocks
 }
 
 // parseInt converts string to int, returns -1 if invalid
