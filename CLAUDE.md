@@ -348,26 +348,26 @@ notion-md-sync/
   - Runs linting with `golangci-lint`
   - Validates code quality before merge
 
-- **Release workflow** (`release.yml`): Triggers only on version tags (`v*`)
-  - Builds binaries for multiple platforms (Linux, Windows, macOS)
-  - Supports both amd64 and arm64 architectures
-  - Creates GitHub releases with artifacts
-  - Uses release notes from `docs/releases/vX.Y.Z.md`
+- **Release workflow** (`release.yml`): Triggers when a GitHub release is **published** (or by manual dispatch). Pushing a tag alone does nothing.
+  - Builds binaries for Linux, macOS (amd64, arm64) and Windows (amd64); it does not run the tests
+  - Attaches them to the release (.tar.gz for Unix, .zip for Windows)
+  - Sets the release body from `docs/releases/<tag>.md`
 
 ### Release Process
-1. **Write Release Notes**: Create `docs/releases/vX.Y.Z.md` with changelog
-2. **Tag the Version**: 
+1. **Bump the version** in `pkg/cli/root.go` (`Version:`) and write `docs/releases/vX.Y.Z.md`.
+2. **Merge to main** once CI is green.
+3. **Tag main and push the tag** (fetch first, so the tag includes the merge):
    ```bash
-   git tag vX.Y.Z
+   git fetch origin main
+   git tag -a vX.Y.Z -m "vX.Y.Z" origin/main
    git push origin vX.Y.Z
    ```
-3. **Automated Release**: GitHub Actions will:
-   - Run all tests
-   - Build cross-platform binaries
-   - Create GitHub release using your markdown notes
-   - Upload binary artifacts (.tar.gz for Unix, .zip for Windows)
+4. **Publish the release** from the tag; this starts the binary build:
+   ```bash
+   gh release create vX.Y.Z --verify-tag --title "vX.Y.Z" --notes-file docs/releases/vX.Y.Z.md
+   ```
 
 ### Development Workflow
 - Push to main or create PRs → CI runs tests/linting
-- Tag with version → Release workflow builds and publishes
-- No binaries built on regular commits (only on tags)
+- Publish a GitHub release → Release workflow builds and attaches binaries
+- No binaries built on regular commits or tag pushes
