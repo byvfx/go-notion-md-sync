@@ -75,7 +75,7 @@ export PATH="$PATH:$HOME/.local/bin"
 ## Build from Source
 
 ### Prerequisites
-- Go 1.21 or later
+- Go 1.23 or later (`go.mod` requires Go 1.23.0 and toolchain go1.24.0)
 
 ### Steps
 ```bash
@@ -135,18 +135,18 @@ notion:
   parent_page_id: ""  # Set via environment variable
 
 sync:
-  direction: push
-  conflict_resolution: diff  # diff (interactive), newer, notion_wins, markdown_wins
+  direction: push  # push, pull, bidirectional
+  conflict_resolution: diff  # diff, newer, notion_wins, markdown_wins
 
 directories:
-  markdown_root: ./docs
-  excluded_patterns:
+  markdown_root: ./  # loader default; `init` suggests ./docs
+  excluded_patterns:  # loader default is none; these are the patterns `init` writes
     - "*.tmp"
     - "node_modules/**"
     - ".git/**"
 
 mapping:
-  strategy: frontmatter
+  strategy: filename  # filename or frontmatter; sync matches files by notion_id
 ```
 
 ## Getting Notion Credentials

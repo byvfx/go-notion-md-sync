@@ -5,7 +5,7 @@ Thank you for your interest in contributing to notion-md-sync! This document pro
 ## Development Setup
 
 ### Prerequisites
-- Go 1.21 or higher
+- Go 1.23 or later (`go.mod` requires Go 1.23.0 and toolchain go1.24.0)
 - golangci-lint (for linting)
 - Make (optional, for using Makefile commands)
 
@@ -82,23 +82,26 @@ go test ./pkg/cli
 ## CI/CD Pipeline
 
 ### Continuous Integration
-All pushes and PRs trigger the CI workflow which:
-- Runs all tests on Go 1.23
-- Executes golangci-lint for code quality
-- Validates on Ubuntu Linux
+Pushes to `main` and pull requests targeting `main` trigger `.github/workflows/ci.yml`, which:
+- Runs `go test -race ./...`
+- Checks `gofmt` and `go vet`
+- Runs golangci-lint
+- Requests Go 1.23 (`go.mod` then selects toolchain go1.24.0)
+- Runs on Ubuntu
 
 ### Release Process
-Releases are automated through GitHub Actions:
+Publishing a GitHub release starts `.github/workflows/release.yml`. Pushing a tag alone does not.
 
-1. **For Maintainers Only**:
-   - Create release notes in `docs/releases/vX.Y.Z.md`
-   - Tag the release: `git tag vX.Y.Z && git push origin vX.Y.Z`
-   - GitHub Actions automatically builds and publishes
+1. **For maintainers**:
+   - Bump `Version` in `pkg/cli/root.go` and add `docs/releases/vX.Y.Z.md`
+   - Merge to `main` after CI is green
+   - Tag that commit and push the tag
+   - Publish the GitHub release from the tag. That runs the workflow
 
-2. **Binary Building**:
-   - Only triggered on version tags (`v*`)
-   - Builds for Linux, macOS, Windows (amd64/arm64)
-   - Creates GitHub release with artifacts
+2. **Binary building**:
+   - Triggered when a release is published, or by manual dispatch
+   - Linux and macOS: amd64 and arm64. Windows: amd64
+   - Attaches archives to the release. The workflow does not run the tests
 
 ## Project Structure
 

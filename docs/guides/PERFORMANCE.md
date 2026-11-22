@@ -117,9 +117,8 @@ If you encounter rate limits:
 
 For very large workspaces:
 
-- Streaming mode is automatically used for 100+ pages
-- Memory usage is optimized per worker
-- Each worker processes one page at a time
+- Pull uses the same worker pool at every size. Each worker handles one page at a time.
+- The worker count is capped at 50 and never exceeds the number of pages.
 
 ## Best Practices
 
@@ -149,4 +148,3 @@ The standard Go HTTP client with default settings performed best:
 Potential areas for further optimization:
 - Caching with ETags (not yet supported by Notion API)
 - Batch API operations (when Notion adds support)
-- Differential sync (only changed blocks)

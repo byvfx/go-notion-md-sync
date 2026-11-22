@@ -1,33 +1,46 @@
-directories:
-  excluded_patterns:
-  - '*.tmp'
-  - 'node_modules/**'
-  - '.git/**'
-  markdown_root: ./docs
-
-mapping:
-  strategy: frontmatter  # or filename
+# notion-md-sync configuration.
+# Values below match the defaults applied by pkg/config.Load when a key is omitted
+# (see TestConfigDefaults). notion.token and notion.parent_page_id have no default.
 
 notion:
-  parent_page_id: "" # Set via NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID env var
-  token: "" # Set via NOTION_MD_SYNC_NOTION_TOKEN env var
+  token: "" # or NOTION_MD_SYNC_NOTION_TOKEN
+  parent_page_id: "" # or NOTION_MD_SYNC_NOTION_PARENT_PAGE_ID
 
 sync:
-  conflict_resolution: newer  # newer, notion_wins, markdown_wins
-  direction: push  # push, pull, bidirectional
+  # push, pull, bidirectional
+  direction: push
+  # diff, newer, notion_wins, markdown_wins.
+  # diff prompts with a diff. newer keeps the later timestamp when both times
+  # are known, and prompts otherwise. Any other value is treated as diff.
+  conflict_resolution: diff
 
-# Performance optimization settings
-# Based on extensive testing showing 26% performance improvement
+directories:
+  # Loader default is ./. The `init` command prompts for a directory and
+  # suggests ./docs when you press enter.
+  markdown_root: ./
+  # Loader default is an empty list. These patterns are the suggested excludes
+  # that `init` writes; they apply only because they are listed here.
+  excluded_patterns:
+    - '*.tmp'
+    - 'node_modules/**'
+    - '.git/**'
+
+mapping:
+  # filename or frontmatter. Loader default is filename.
+  # Sync matches files to pages by notion_id and does not read this field.
+  strategy: filename
+
+# Performance settings. Defaults: workers 0, use_multi_client false, client_count 3.
 performance:
-  # Worker count: 0 = auto-detect (recommended)
-  # - Small workspaces (<5 pages): Uses page count
-  # - Medium workspaces (5-14 pages): Uses 20 workers
-  # - Large workspaces (15+ pages): Uses 30 workers
+  # 0 (or negative) auto-detects:
+  # - fewer than 5 pages: one worker per page
+  # - 5 to 14 pages: 20 workers
+  # - 15 or more pages: 30 workers
+  # A positive value is used as given, then capped at 50 and at the page count.
   workers: 0
-  
-  # Multi-client mode (experimental)
-  # Standard single client usually performs best
+
+  # false uses one HTTP client. true uses client_count clients, round-robin.
   use_multi_client: false
-  
-  # Number of HTTP clients when multi-client is enabled
+
+  # Used only when use_multi_client is true. Values outside 1-10 are clamped.
   client_count: 3

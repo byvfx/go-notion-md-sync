@@ -7,14 +7,6 @@ BINARY_NAME=notion-md-sync
 build:
 	go build -o bin/$(BINARY_NAME) ./cmd/notion-md-sync
 
-# Build performance testing tools
-build-perf:
-	go build -o bin/measure-perf ./cmd/measure-perf
-	go build -o bin/perf-test ./cmd/perf-test
-
-# Build all binaries
-build-all: build build-perf
-
 # Run tests
 test:
 	go test -v ./...
@@ -77,6 +69,6 @@ validate: build
 setup: deps build
 	@echo "Setting up notion-md-sync..."
 	@if [ ! -f .env ]; then cp .env.example .env; echo "Created .env file - please edit with your values"; fi
-	@if [ ! -f config/config.yaml ]; then cp config/config.template.yaml config/config.yaml; echo "Created config.yaml"; fi
+	@if [ ! -f config/config.yaml ]; then cp config/config.template.yaml config/config.yaml; echo "Created config/config.yaml (pass -c config/config.yaml; with no -c flag, config.yaml is read from ., ./configs, or ~/.notion-md-sync)"; fi
 	@mkdir -p docs
 	@echo "Setup complete! Edit .env with your Notion token and page ID, then run 'make validate'"
