@@ -1,6 +1,6 @@
 # notion-md-sync
 
-[![CI Status](https://github.com/byvfx/go-notion-md-sync/workflows/CI/badge.svg)](https://github.com/byvfx/go-notion-md-sync/actions)
+[![CI](https://github.com/byvfx/go-notion-md-sync/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/byvfx/go-notion-md-sync/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/byvfx/go-notion-md-sync)](https://goreportcard.com/report/github.com/byvfx/go-notion-md-sync)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub release](https://img.shields.io/github/release/byvfx/go-notion-md-sync.svg)](https://github.com/byvfx/go-notion-md-sync/releases)
